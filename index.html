@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SGF to Music Video</title>
+    <meta name="theme-color" content="#151313" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="assets/site/favicons/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/site/favicons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/site/favicons/favicon-16x16.png" />
+    <link rel="apple-touch-icon" href="assets/site/favicons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <nav class="top-nav" aria-label="Primary">
+        <a class="brand" href="index.html" aria-label="SGF to Music home">
+          <img src="assets/site/logo.webp" alt="" />
+          <span>SGF to Music Video</span>
+        </a>
+        <input id="navToggle" class="nav-toggle" type="checkbox" />
+        <label class="nav-menu-button" for="navToggle" aria-label="Toggle navigation">
+          <span></span>
+          <span></span>
+          <span></span>
+        </label>
+        <div class="nav-links">
+          <a href="index.html" aria-current="page">Simple</a>
+          <a href="complex.html">Complex</a>
+          <a href="about.html">About</a>
+          <a href="https://SoumyaK4.in">Projects</a>
+          <a href="https://buymeacoffee.com/soumyak4">Support</a>
+        </div>
+      </nav>
+
+      <section class="studio">
+        <aside class="panel panel-left">
+          <div>
+            <h1>Turn your games into elegant music.</h1>
+          </div>
+
+          <label class="upload">
+            <input id="fileInput" type="file" accept=".sgf,application/x-go-sgf,text/plain" />
+            <span>Choose SGF</span>
+          </label>
+
+          <div class="meta" id="gameMeta">
+            <span>No game loaded</span>
+          </div>
+
+          <div class="controls">
+            <button id="playButton" type="button" disabled>Play</button>
+            <button id="stopButton" type="button" disabled>Stop</button>
+            <button id="renderButton" type="button" disabled>Render video</button>
+          </div>
+
+          <a id="downloadLink" class="download" hidden>Download video</a>
+          <p class="status" id="status">Upload an SGF file to begin.</p>
+        </aside>
+
+        <section class="stage">
+          <canvas id="boardCanvas" width="1080" height="1080"></canvas>
+        </section>
+
+        <aside class="panel panel-right">
+          <div>
+            <p class="eyebrow">Settings</p>
+          </div>
+
+          <details class="settings-group" open>
+            <summary>Playback</summary>
+            <label class="field">
+              <span>Move pace</span>
+              <input id="paceInput" type="range" min="0.35" max="1.4" step="0.05" value="0.72" />
+            </label>
+
+            <label class="field">
+              <span>Volume</span>
+              <input id="volumeInput" type="range" min="0.25" max="1" step="0.05" value="0.75" />
+            </label>
+
+            <label class="field field-inline">
+              <input id="legatoInput" type="checkbox" />
+              <span>Use legato</span>
+            </label>
+
+            <label class="field field-inline">
+              <input id="droneInput" type="checkbox" />
+              <span>Use drone</span>
+            </label>
+
+          </details>
+
+          <details class="settings-group">
+            <summary>Music</summary>
+            <div class="field-grid">
+              <label class="field">
+                <span>Instrument</span>
+                <select id="instrumentInput">
+                  <option value="piano">Piano</option>
+                  <option value="guitar">Guitar</option>
+                  <option value="harp">Harp</option>
+                  <option value="cello">Cello</option>
+                  <option value="violin">Violin</option>
+                  <option value="flute">Flute</option>
+                  <option value="contrabass">Contrabass</option>
+                </select>
+              </label>
+
+              <input id="scaleInput" type="hidden" value="major" />
+            </div>
+
+            <div class="field-grid">
+              <input id="chordInput" type="hidden" value="none" />
+              <input id="musicModeInput" type="hidden" value="hirajoshi-neighborhood" />
+            </div>
+
+            <div class="field-grid">
+              <label class="field">
+                <span>Register</span>
+                <select id="registerInput">
+                  <option value="full">Full range</option>
+                  <option value="middle">Middle range</option>
+                  <option value="high">Higher range</option>
+                  <option value="low">Lower range</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Note length</span>
+                <select id="noteLengthInput">
+                  <option value="1">Natural</option>
+                  <option value="0.65">Short</option>
+                  <option value="1.35">Lingering</option>
+                </select>
+              </label>
+            </div>
+          </details>
+
+          <details class="settings-group">
+            <summary>Visuals & Export</summary>
+            <div class="field-grid">
+              <label class="field">
+                <span>Texture</span>
+                <select id="textureInput">
+                  <option value="photo">Photo board</option>
+                  <option value="drawn">Drawn board</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Video size</span>
+                <select id="sizeInput">
+                  <option value="1080">1080 x 1080</option>
+                  <option value="720">720 x 720</option>
+                  <option value="1440">1440 x 1440</option>
+                </select>
+              </label>
+            </div>
+          </details>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="src/app.js"></script>
+    <script type="module" src="src/pwa.js"></script>
+    <script data-goatcounter="https://sgf2mv.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+  </body>
+</html>

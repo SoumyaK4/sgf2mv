@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About SGF to Music Video</title>
+    <meta name="theme-color" content="#151313" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="assets/site/favicons/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/site/favicons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/site/favicons/favicon-16x16.png" />
+    <link rel="apple-touch-icon" href="assets/site/favicons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <nav class="top-nav" aria-label="Primary">
+        <a class="brand" href="index.html" aria-label="SGF to Music home">
+          <img src="assets/site/logo.webp" alt="" />
+          <span>SGF to Music Video</span>
+        </a>
+        <input id="navToggle" class="nav-toggle" type="checkbox" />
+        <label class="nav-menu-button" for="navToggle" aria-label="Toggle navigation">
+          <span></span>
+          <span></span>
+          <span></span>
+        </label>
+        <div class="nav-links">
+          <a href="index.html">Simple</a>
+          <a href="complex.html">Complex</a>
+          <a href="about.html" aria-current="page">About</a>
+          <a href="https://SoumyaK4.in">Projects</a>
+          <a href="https://buymeacoffee.com/soumyak4">Support</a>
+        </div>
+      </nav>
+
+      <section class="about-page">
+        <div class="about-hero">
+          <div class="about-content">
+            <p class="eyebrow">About</p>
+            <h1>SGF to Music Video turns Go games into a nice music videos.</h1>
+            <p>
+              Upload an SGF file and the app parses the move sequence, animates it on a wooden board,
+              and maps each move into deterministic notes. The same game always produces the same
+              musical shape, while controls for scale, chords, instrument, register, pacing, and board
+              texture let each render take on a different character.
+            </p>
+            <p>
+              You can find more Go projects at <a href="https://SoumyaK4.in/">SoumyaK4.in</a>.
+            </p>
+          </div>
+          <img src="assets/site/logo.webp" alt="" />
+        </div>
+
+        <div class="about-content">
+          <section>
+            <h2>Inspiration</h2>
+            <p>This project was inspired by:</p>
+            <ul>
+              <li><a href="https://youtu.be/0mwMfDykfZA">GO TO MUSIC - MOVE 37</a></li>
+              <li><a href="https://youtu.be/sqHeGRJYsPA">GO TO MUSIC - Ear Reddening</a></li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>How to use the simple mode</h2>
+            <p>
+              Open the Simple page, choose an SGF file, then press Play to hear the game locally.
+              Each new stone and its surrounding intersections choose notes from D, Eb, G, A, and
+              Bb, while growing board density gradually lifts the pitch. Use Playback for pace,
+              volume, legato, and drone, Music for instrument and register, and Visuals & Export
+              for board style and video size. Use Render video to export a WebM.
+            </p>
+          </section>
+
+          <section>
+            <h2>How to use complex mode</h2>
+            <p>
+              Open the Complex page when you want different parts of the board to sound different.
+              Board Parts lets you enable corners, sides, or centre, then assign melodic instruments
+              and musical settings to that area. Flow & Texture controls legato, dovetailing, voice
+              leading, glissando, doubling, homophony, through-composed flow, transitions, and organic
+              unity. Neighborhood notes can be enabled globally or inside individual board parts.
+              Move ranges can add extra instruments, including percussion, for specific phases of the
+              game. Sustained Layers add sounds over the move notes for the whole game or a move
+              range, and the Every field controls whether that layer plays every move, every second
+              move, every third move, and so on.
+            </p>
+          </section>
+
+          <section>
+            <h2>Feedback</h2>
+            <p>
+              This is the initial release, so I expect bugs.<br> 
+              Also it has been over a decade since I quit music, so kindly let me know if I made any musical mistakes.<br>
+              <a href="https://t.me/SoumyaK4">Contact on Telegram</a> or find SoumyaK4 on Instagram/Reddit/Discord.<br>
+              P.S. handicap games won't work currently.
+            </p>
+          </section>
+
+          <section>
+            <h2>Sound Credits</h2>
+            <p>Sounds are from:</p>
+            <ul>
+              <li><a href="https://github.com/nbrosowsky/tonejs-instruments">tonejs-instruments</a></li>
+              <li><a href="https://github.com/skratchdot/philharmonia-samples/">philharmonia-samples</a></li>
+            </ul>
+            Logo image by <a href="https://www.instagram.com/p/CCa0rYCn1W1/">Stoned On The Goban</a>
+          </section>
+
+          <div class="about-actions">
+            <a href="index.html">Open the app</a>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="src/pwa.js"></script>
+    <script data-goatcounter="https://sgf2mv.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+  </body>
+</html>
