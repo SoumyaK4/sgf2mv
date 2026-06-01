@@ -23,6 +23,7 @@ const scaleInput = document.querySelector("#scaleInput");
 const chordInput = document.querySelector("#chordInput");
 const simpleInstrumentBlendInput = document.querySelector("#simpleInstrumentBlendInput");
 const simplePercussionInput = document.querySelector("#simplePercussionInput");
+const simpleFightingDramaInput = document.querySelector("#simpleFightingDramaInput");
 const simpleMusicTypeInput = document.querySelector("#simpleMusicTypeInput");
 const musicModeInput = document.querySelector("#musicModeInput");
 const neighborhoodInput = document.querySelector("#neighborhoodInput");
@@ -956,6 +957,14 @@ function getSimpleTacticalExpression(tactics) {
   return null;
 }
 
+function getSimpleDramaPace(tactics) {
+  if (!isSimplePage() || !simpleFightingDramaInput?.checked) return null;
+  if (tactics.captures > 0) return 0.9;
+  if (tactics.koLike) return 1.1;
+  if (tactics.fight || tactics.opponentAtari || tactics.ownAtari) return 1.12;
+  return null;
+}
+
 function getPhraseProfile(game, index, tactics, tacticalState) {
   const intelligence = getMusicalIntelligenceSettings();
   const barLength = intelligence.barLength;
@@ -1716,6 +1725,7 @@ async function playGame(game, { record = false } = {}) {
   let activeDroneKey = "";
   let tacticalPaceBoost = null;
   let simpleTacticalExpressionCarry = null;
+  let simpleDramaPaceCarry = null;
   let tacticalState = { tension: 0, release: 0, continuity: 0 };
   let previousLeadMidi = null;
   const boardHashes = new Set([boardHash(board)]);
@@ -1754,6 +1764,17 @@ async function playGame(game, { record = false } = {}) {
     let tacticalExpression = neutralTacticalExpression();
     let movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value)) * entry.phrase.pace;
     if (isSimplePage()) {
+      const currentDramaPace = tacticalSettings.mode === "off" ? null : getSimpleDramaPace(entry.tactics);
+      if (currentDramaPace) {
+        simpleDramaPaceCarry = { multiplier: currentDramaPace, remaining: tacticalSettings.paceCarry };
+        movePace *= currentDramaPace;
+      } else if (simpleDramaPaceCarry?.remaining > 0 && tacticalSettings.mode !== "off" && simpleFightingDramaInput?.checked) {
+        movePace *= simpleDramaPaceCarry.multiplier;
+        simpleDramaPaceCarry.remaining -= 1;
+        if (simpleDramaPaceCarry.remaining <= 0) simpleDramaPaceCarry = null;
+      } else if (simpleDramaPaceCarry && (tacticalSettings.mode === "off" || !simpleFightingDramaInput?.checked)) {
+        simpleDramaPaceCarry = null;
+      }
       if (simpleTacticalExpressionCarry?.remaining > 0) {
         tacticalExpression = simpleTacticalExpressionCarry.expression;
         simpleTacticalExpressionCarry.remaining -= 1;
