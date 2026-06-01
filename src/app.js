@@ -22,6 +22,8 @@ const whiteInstrumentInput = document.querySelector("#whiteInstrumentInput");
 const scaleInput = document.querySelector("#scaleInput");
 const chordInput = document.querySelector("#chordInput");
 const simpleInstrumentBlendInput = document.querySelector("#simpleInstrumentBlendInput");
+const simplePercussionInput = document.querySelector("#simplePercussionInput");
+const simpleMusicTypeInput = document.querySelector("#simpleMusicTypeInput");
 const musicModeInput = document.querySelector("#musicModeInput");
 const neighborhoodInput = document.querySelector("#neighborhoodInput");
 const tacticalAccentsInput = document.querySelector("#tacticalAccentsInput");
@@ -97,8 +99,13 @@ let activeRecorder = null;
 const letters = "abcdefghijklmnopqrstuvwxyz";
 const scaleModes = {
   "korean-pentatonic": [7, 9, 10, 2, 3],
+  "chinese-pentatonic": [0, 2, 4, 7, 9],
+  "japanese-hirajoshi": [0, 1, 5, 7, 8],
+  "japanese-insen": [0, 1, 5, 7, 10],
   major: [0, 2, 4, 5, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10],
 };
 const chordModes = {
   none: [],
@@ -531,12 +538,19 @@ function getComposition(game, settings = getCurrentSettings()) {
     balanced: selectedScale,
     wide: selectedScale,
     pentatonic: [0, 2, 4, 7, 9],
-    "goto-music-move37": [7, 9, 10, 2, 3],
+    "goto-music-move37": selectedScale,
     "hirajoshi-neighborhood": [0, 1, 5, 7, 8],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     all: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   };
-  const root = settings.musicMode === "hirajoshi-neighborhood" || settings.musicMode === "goto-music-move37" ? 55 : 36 + (game.seed % 12);
+  const root =
+    settings.musicMode === "hirajoshi-neighborhood"
+      ? 38
+      : settings.scale === "chinese-pentatonic"
+        ? noteLabelToMidi.D + 12 * 4
+        : settings.musicMode === "goto-music-move37"
+          ? noteLabelToMidi.G + 12 * 4
+          : 36 + (game.seed % 12);
   const scale = modeScales[settings.musicMode] || modeScales.balanced;
   return { root, scale };
 }
@@ -576,6 +590,57 @@ function getSimpleInstrumentLabel() {
 
 function isSimplePage() {
   return !regionRows.length && Boolean(blackInstrumentInput || whiteInstrumentInput);
+}
+
+function getSimpleMusicTypeSettings() {
+  const type = simpleMusicTypeInput?.value || "korean";
+  const variants = {
+    western: { type, scale: "major", musicMode: "balanced", register: "middle", maxStep: 3 },
+    korean: { type, scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "full", maxStep: 2 },
+    chinese: { type, scale: "chinese-pentatonic", musicMode: "goto-music-move37", register: "middle", maxStep: 2 },
+    japanese: { type, scale: "japanese-hirajoshi", musicMode: "hirajoshi-neighborhood", register: "middle", maxStep: 2 },
+  };
+  return variants[type] || variants.korean;
+}
+
+function getExpressiveSimpleSettings(settings, tactics, phrase) {
+  if (!isSimplePage()) return settings;
+  const variant = getSimpleMusicTypeSettings();
+  const tense = tactics.koLike || tactics.fight || tactics.opponentAtari || tactics.ownAtari;
+  const release = tactics.captures > 0;
+  const phase = phrase.phase || "middle";
+  const expressive = {
+    western: {
+      opening: { scale: "major", musicMode: "balanced", register: "middle" },
+      middle: { scale: "mixolydian", musicMode: "balanced", register: "middle" },
+      endgame: { scale: "dorian", musicMode: "balanced", register: "middle" },
+      tense: { scale: "minor", musicMode: "wide", register: "middle" },
+      release: { scale: "major", musicMode: "pentatonic", register: "middle" },
+    },
+    korean: {
+      opening: { scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "full" },
+      middle: { scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "full" },
+      endgame: { scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "middle" },
+      tense: { scale: "japanese-hirajoshi", musicMode: "goto-music-move37", register: "middle" },
+      release: { scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "full" },
+    },
+    chinese: {
+      opening: { scale: "chinese-pentatonic", musicMode: "goto-music-move37", register: "middle" },
+      middle: { scale: "chinese-pentatonic", musicMode: "goto-music-move37", register: "middle" },
+      endgame: { scale: "minor", musicMode: "goto-music-move37", register: "middle" },
+      tense: { scale: "minor", musicMode: "wide", register: "middle" },
+      release: { scale: "chinese-pentatonic", musicMode: "pentatonic", register: "middle" },
+    },
+    japanese: {
+      opening: { scale: "japanese-hirajoshi", musicMode: "hirajoshi-neighborhood", register: "middle" },
+      middle: { scale: "japanese-hirajoshi", musicMode: "hirajoshi-neighborhood", register: "middle" },
+      endgame: { scale: "japanese-insen", musicMode: "hirajoshi-neighborhood", register: "middle" },
+      tense: { scale: "japanese-insen", musicMode: "hirajoshi-neighborhood", register: "middle" },
+      release: { scale: "chinese-pentatonic", musicMode: "pentatonic", register: "middle" },
+    },
+  }[variant.type];
+  const mood = release ? expressive.release : tense ? expressive.tense : expressive[phase] || expressive.middle;
+  return { ...settings, ...mood };
 }
 
 function buildNotePool(game, settings = getCurrentSettings()) {
@@ -663,7 +728,8 @@ function noteForGotoMusicMove(game, move, settings = getCurrentSettings(), conte
   const base = noteLabelToMidi.G + 12 * 4;
   const degree = index - 1;
   const octaveOffset = Math.floor(degree / scale.length) * 12;
-  const midi = base + scale[degree % scale.length] + octaveOffset;
+  const rootOffset = settings.scale === "chinese-pentatonic" ? noteLabelToMidi.D - noteLabelToMidi.G : 0;
+  const midi = base + rootOffset + scale[degree % scale.length] + octaveOffset;
   return { index, label: midiToDisplayName(midi), midi };
 }
 
@@ -768,6 +834,43 @@ function getSimpleBlendShape(tactics, phrase) {
   return { delay: 0.16, durationScale: 1, intensity: 0.12 };
 }
 
+function makePercussionNote(instrument, delay = 0, durationScale = 0.34, intensity = 0.34) {
+  return {
+    instrument,
+    sampleName: percussionSamples[instrument],
+    kind: "percussion",
+    delay,
+    durationScale,
+    intensity,
+  };
+}
+
+function getSimplePercussionNotes(tactics, phrase) {
+  if (!isSimplePage() || !simplePercussionInput?.checked) return [];
+  const notes = [];
+  const tacticalOn = getTacticalSettings().mode !== "off";
+  if (!tacticalOn) return [];
+  const phraseOn = getMusicalIntelligenceSettings().phraseShaping;
+
+  if (tactics.captures > 0) {
+    notes.push(makePercussionNote("bass drum", 0.006, 0.3, 0.34));
+    if (tactics.captures > 1) notes.push(makePercussionNote("tambourine", 0.09, 0.22, 0.18));
+  } else if (tactics.koLike) {
+    notes.push(makePercussionNote("triangle", 0.12, 0.52, 0.22));
+  } else if (tactics.fight || tactics.opponentAtari || tactics.ownAtari) {
+    notes.push(makePercussionNote(tactics.ownAtari ? "cowbell" : "djembe", 0.04, 0.28, 0.24));
+  }
+
+  if (phraseOn && phrase.phraseCadence) {
+    const instrument = phrase.phase === "endgame" ? "suspended cymbal" : phrase.phase === "middle" ? "djembe" : "woodblock";
+    notes.push(makePercussionNote(instrument, 0.18, phrase.phase === "endgame" ? 0.58 : 0.3, phrase.phase === "endgame" ? 0.2 : 0.18));
+  } else if (phraseOn && phrase.barPosition === 0 && phrase.phase !== "endgame" && !notes.length) {
+    notes.push(makePercussionNote(phrase.phase === "opening" ? "woodblock" : "agogo bells", 0.02, 0.24, 0.14));
+  }
+
+  return notes.slice(0, 2);
+}
+
 function makeMelodicNote(instrument, midi, delay = 0, intensity = 1) {
   return {
     instrument,
@@ -832,11 +935,25 @@ function getGamePhase(game, index) {
   return "middle";
 }
 
-function quantizeSimpleTempoMultiplier(multiplier) {
-  if (!isSimplePage()) return multiplier;
-  if (multiplier > 1) return 1.25;
-  if (multiplier < 1) return 0.75;
-  return 1;
+function neutralTacticalExpression() {
+  return { duration: 1, overlap: 1, brightness: 1, intensity: 1 };
+}
+
+function blendTacticalExpression(base, accent) {
+  if (!accent) return base;
+  return {
+    duration: base.duration * 0.38 + accent.duration * 0.62,
+    overlap: base.overlap * 0.38 + accent.overlap * 0.62,
+    brightness: base.brightness * 0.35 + accent.brightness * 0.65,
+    intensity: base.intensity * 0.35 + accent.intensity * 0.65,
+  };
+}
+
+function getSimpleTacticalExpression(tactics) {
+  if (tactics.captures > 0) return { duration: 0.88, overlap: 0.82, brightness: 1.12, intensity: 1.08 };
+  if (tactics.koLike) return { duration: 1.1, overlap: 1.16, brightness: 0.94, intensity: 0.96 };
+  if (tactics.fight || tactics.opponentAtari || tactics.ownAtari) return { duration: 1.08, overlap: 1.12, brightness: 0.92, intensity: 0.94 };
+  return null;
 }
 
 function getPhraseProfile(game, index, tactics, tacticalState) {
@@ -1080,8 +1197,13 @@ function getOptionalCheckedValues(container, selector) {
 function initializeRegionRows() {
   const scales = [
     { value: "korean-pentatonic", label: "Korean pentatonic" },
+    { value: "chinese-pentatonic", label: "Chinese pentatonic" },
+    { value: "japanese-hirajoshi", label: "Japanese Hirajoshi" },
+    { value: "japanese-insen", label: "Japanese Insen" },
     { value: "major", label: "Major" },
     { value: "minor", label: "Minor" },
+    { value: "dorian", label: "Dorian" },
+    { value: "mixolydian", label: "Mixolydian" },
   ];
   const chords = [
     { value: "none", label: "None" },
@@ -1287,14 +1409,15 @@ function getRegionName(move, size) {
 
 function getRegionSettings(move, game) {
   if (!regionRows.length && (blackInstrumentInput || whiteInstrumentInput)) {
+    const variant = getSimpleMusicTypeSettings();
     const instrument = move.color === "B" ? blackInstrumentInput?.value || "piano" : whiteInstrumentInput?.value || "guitar";
     return {
       instrument,
       instruments: [instrument],
-      scale: scaleInput.value,
+      scale: variant.scale,
       chord: chordInput.value,
-      musicMode: musicModeInput.value,
-      register: registerInput.value,
+      musicMode: variant.musicMode,
+      register: variant.register,
       mood: "neutral",
       legato: Boolean(legatoInput?.checked),
       drone: false,
@@ -1406,9 +1529,10 @@ function buildMoveEntry(game, board, move, index, moveResult, tacticalState = { 
   const leadInstrument = melodicInstruments[0] || "piano";
   const tactics = analyzeMoveTactics(game, board, move, moveResult);
   const phrase = getPhraseProfile(game, index, tactics, tacticalState);
-  const noteSettings = { ...settings, instrument: leadInstrument, board };
+  const noteSettings = getExpressiveSimpleSettings({ ...settings, instrument: leadInstrument, board }, tactics, phrase);
   const rawMidi = noteForMove(game, move, index, captures, noteSettings, phrase);
-  const midi = isSimplePage() ? smoothMelodyMidi(game, rawMidi, previousMidi, noteSettings, 2) : rawMidi;
+  const simpleMaxStep = getSimpleMusicTypeSettings().maxStep;
+  const midi = isSimplePage() ? smoothMelodyMidi(game, rawMidi, previousMidi, noteSettings, simpleMaxStep) : rawMidi;
   const gotoMusic = settings.musicMode === "goto-music-move37" ? { ...noteForGotoMusicMove(game, move, noteSettings, phrase), midi, label: midiToDisplayName(midi) } : null;
   const chord = chordForMidi(game, midi, noteSettings);
   const textureNotes = chord.length ? chord : [midi];
@@ -1431,14 +1555,8 @@ function buildMoveEntry(game, board, move, index, moveResult, tacticalState = { 
   });
   const tacticalNotes = buildTacticalNotes(game, midi, tactics, noteSettings, melodicInstruments, tacticalState);
   const displayLabel = describeMoveNotes([...melodicNotes.map((note) => note.midi), ...tacticalNotes.map((note) => note.midi)], midi);
-  const percussionNotes = percussionInstruments.map((instrument) => ({
-    instrument,
-    sampleName: percussionSamples[instrument],
-    kind: "percussion",
-    delay: 0,
-    durationScale: 1,
-    intensity: 1,
-  }));
+  const percussionNotes = percussionInstruments.map((instrument) => makePercussionNote(instrument, 0, 1, 1));
+  const simplePercussionNotes = getSimplePercussionNotes(tactics, phrase);
   return {
     move,
     moveNumber: index + 1,
@@ -1451,8 +1569,8 @@ function buildMoveEntry(game, board, move, index, moveResult, tacticalState = { 
     settings: noteSettings,
     rangeSettings,
     flow,
-    chordSize: Math.max(1, melodicNotes.length + blendNotes.length + percussionNotes.length),
-    notes: [...melodicNotes, ...blendNotes, ...tacticalNotes, ...percussionNotes],
+    chordSize: Math.max(1, melodicNotes.length + blendNotes.length + percussionNotes.length + simplePercussionNotes.length),
+    notes: [...melodicNotes, ...blendNotes, ...tacticalNotes, ...percussionNotes, ...simplePercussionNotes],
   };
 }
 
@@ -1597,6 +1715,7 @@ async function playGame(game, { record = false } = {}) {
   let activeDrone = null;
   let activeDroneKey = "";
   let tacticalPaceBoost = null;
+  let simpleTacticalExpressionCarry = null;
   let tacticalState = { tension: 0, release: 0, continuity: 0 };
   let previousLeadMidi = null;
   const boardHashes = new Set([boardHash(board)]);
@@ -1631,19 +1750,31 @@ async function playGame(game, { record = false } = {}) {
     const rangeSettings = entry.rangeSettings;
     const flow = entry.flow;
     const profile = getMoodProfile(entry.settings.mood !== "neutral" ? entry.settings.mood : rangeSettings.mood);
+    const tacticalSettings = getTacticalSettings();
+    let tacticalExpression = neutralTacticalExpression();
     let movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value)) * entry.phrase.pace;
-    if (tacticalPaceBoost?.remaining > 0) {
+    if (isSimplePage()) {
+      if (simpleTacticalExpressionCarry?.remaining > 0) {
+        tacticalExpression = simpleTacticalExpressionCarry.expression;
+        simpleTacticalExpressionCarry.remaining -= 1;
+        if (simpleTacticalExpressionCarry.remaining <= 0) simpleTacticalExpressionCarry = null;
+      }
+      const currentExpression = tacticalSettings.mode === "off" ? null : getSimpleTacticalExpression(entry.tactics);
+      if (currentExpression) {
+        tacticalExpression = blendTacticalExpression(tacticalExpression, currentExpression);
+        simpleTacticalExpressionCarry = { expression: currentExpression, remaining: tacticalSettings.paceCarry };
+      }
+    } else if (tacticalPaceBoost?.remaining > 0) {
       movePace *= tacticalPaceBoost.multiplier;
       tacticalPaceBoost.remaining -= 1;
       if (tacticalPaceBoost.remaining <= 0) tacticalPaceBoost = null;
     }
-    const tacticalSettings = getTacticalSettings();
-    const capturePace = quantizeSimpleTempoMultiplier(tacticalSettings.capturePace);
-    const fightPace = quantizeSimpleTempoMultiplier(tacticalSettings.fightPace);
-    if (entry.tactics.captures > 0) {
+    if (!isSimplePage() && entry.tactics.captures > 0) {
+      const capturePace = tacticalSettings.capturePace;
       tacticalPaceBoost = { multiplier: capturePace, remaining: tacticalSettings.paceCarry };
       movePace *= capturePace;
-    } else if (entry.tactics.fight || entry.tactics.opponentAtari || entry.tactics.ownAtari) {
+    } else if (!isSimplePage() && (entry.tactics.fight || entry.tactics.opponentAtari || entry.tactics.ownAtari)) {
+      const fightPace = tacticalSettings.fightPace;
       tacticalPaceBoost = { multiplier: fightPace, remaining: tacticalSettings.paceCarry };
       movePace *= fightPace;
     }
@@ -1668,9 +1799,9 @@ async function playGame(game, { record = false } = {}) {
     }[flow.structure] || { duration: 1, overlap: 1 };
     const isFinalMove = index === game.moves.length - 1;
     const finalTail = isFinalMove ? 2.4 : 1;
-    const noteDuration = movePace * Number(noteLengthInput.value) * profile.duration * connectionShape.duration * structureShape.duration * entry.phrase.duration * (isFinalMove ? 1.35 : 1);
+    const noteDuration = movePace * Number(noteLengthInput.value) * profile.duration * connectionShape.duration * structureShape.duration * entry.phrase.duration * tacticalExpression.duration * (isFinalMove ? 1.35 : 1);
     const noteOverlap = Math.min(
-      movePace * 0.68 * profile.overlap * connectionShape.overlap * structureShape.overlap * entry.phrase.overlap * finalTail,
+      movePace * 0.68 * profile.overlap * connectionShape.overlap * structureShape.overlap * entry.phrase.overlap * tacticalExpression.overlap * finalTail,
       isFinalMove ? 3.2 : isLegato ? 1.65 : 1.15,
     );
     for (const row of getActiveSustainRows(index + 1)) {
@@ -1705,8 +1836,8 @@ async function playGame(game, { record = false } = {}) {
       const sample = await ensureDecodedSample(samples, audio, note.instrument, note.sampleName);
       if (abort.cancelled) break;
       const kindTrim = note.kind === "tactical" ? 0.58 : note.kind === "blend" ? 1 : 1;
-      const noteIntensity = kindTrim * (note.intensity ?? 1) * entry.phrase.intensity;
-      const phraseProfile = { ...profile, brightness: profile.brightness * entry.phrase.brightness };
+      const noteIntensity = kindTrim * (note.intensity ?? 1) * entry.phrase.intensity * tacticalExpression.intensity;
+      const phraseProfile = { ...profile, brightness: profile.brightness * entry.phrase.brightness * tacticalExpression.brightness };
       const scheduledTime = audio.currentTime + 0.014 + chordIndex * connectionShape.stagger + (note.delay || 0);
       playNote(
         audio,

@@ -116,6 +116,16 @@
             </div>
 
             <div class="field-grid">
+              <label class="field">
+                <span>Music type</span>
+                <select id="simpleMusicTypeInput">
+                  <option value="western">Variant 1 - Western</option>
+                  <option value="korean" selected>Variant 2 - Korean</option>
+                  <option value="chinese">Variant 3 - Chinese</option>
+                  <option value="japanese">Variant 4 - Japanese</option>
+                </select>
+              </label>
+
               <input id="scaleInput" type="hidden" value="korean-pentatonic" />
               <input id="chordInput" type="hidden" value="none" />
               <input id="musicModeInput" type="hidden" value="goto-music-move37" />
@@ -133,6 +143,11 @@
               <span>Fighting Sounds</span>
             </label>
 
+            <label class="field field-inline">
+              <input id="simplePercussionInput" type="checkbox" checked />
+              <span>Fighting Percussion</span>
+            </label>
+            
             <label class="field field-inline">
               <input id="phraseShapingInput" type="checkbox" checked />
               <span>Game Phase</span>
