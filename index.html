@@ -72,7 +72,7 @@
             <summary>Playback</summary>
             <label class="field">
               <span>Move pace</span>
-              <input id="paceInput" type="range" min="0.35" max="1.4" step="0.05" value="0.72" />
+              <input id="paceInput" type="range" min="0.35" max="1.4" step="0.05" value="0.50" />
             </label>
 
             <label class="field">
@@ -81,8 +81,8 @@
             </label>
 
             <label class="field field-inline">
-              <input id="legatoInput" type="checkbox" />
-              <span>Use legato</span>
+              <input id="legatoInput" type="checkbox" checked/>
+              <span>Smooth Notes</span>
             </label>
 
             <input id="droneInput" type="hidden" value="" />
@@ -95,20 +95,20 @@
               <label class="field">
                 <span>Black</span>
                 <select id="blackInstrumentInput">
+                  <option value="cello">Cello</option>
                   <option value="piano">Piano</option>
                   <option value="guitar">Guitar</option>
                   <option value="harp">Harp</option>
-                  <option value="cello">Cello</option>
                 </select>
               </label>
 
               <label class="field">
                 <span>White</span>
                 <select id="whiteInstrumentInput">
+                  <option value="cello">Cello</option>
                   <option value="piano">Piano</option>
                   <option value="guitar">Guitar</option>
                   <option value="harp">Harp</option>
-                  <option value="cello">Cello</option>
                 </select>
               </label>
 
@@ -122,6 +122,11 @@
               <input id="registerInput" type="hidden" value="full" />
               <input id="noteLengthInput" type="hidden" value="1.35" />
             </div>
+
+            <label class="field field-inline">
+              <input id="tacticalAccentsInput" type="checkbox" checked />
+              <span>Fighting Sounds</span>
+            </label>
           </details>
 
           <details class="settings-group">

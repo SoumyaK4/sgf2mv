@@ -72,15 +72,19 @@
             <summary>Playback</summary>
             <label class="field">
               <span>Move pace</span>
-              <input id="paceInput" type="range" min="0.35" max="1.4" step="0.05" value="0.72" />
+              <input id="paceInput" type="range" min="0.35" max="1.4" step="0.05" value="0.82" />
             </label>
             <label class="field">
               <span>Volume</span>
               <input id="volumeInput" type="range" min="0.25" max="1" step="0.05" value="0.75" />
             </label>
             <label class="field field-inline">
-              <input id="legatoInput" type="checkbox" />
+              <input id="legatoInput" type="checkbox" checked />
               <span>Use legato</span>
+            </label>
+            <label class="field field-inline">
+              <input id="droneInput" type="checkbox" />
+              <span>Use drone</span>
             </label>
             <label class="field field-inline">
               <input id="sectionPacingInput" type="checkbox" />
@@ -100,7 +104,7 @@
                 <select id="instrumentInput">
                   <option value="piano">Piano</option>
                   <option value="guitar">Guitar</option>
-                  <option value="harp">Harp</option>
+                  <option value="harp" selected>Harp</option>
                   <option value="cello">Cello</option>
                   <option value="violin">Violin</option>
                   <option value="flute">Flute</option>
@@ -110,8 +114,8 @@
               <label class="field">
                 <span>Scale</span>
                 <select id="scaleInput">
-                  <option value="korean-pentatonic">Korean pentatonic</option>
-                  <option value="major" selected>Major</option>
+                  <option value="korean-pentatonic" selected>Korean pentatonic</option>
+                  <option value="major">Major</option>
                   <option value="minor">Minor</option>
                 </select>
               </label>
@@ -129,7 +133,7 @@
                 <span>Music map</span>
                 <select id="musicModeInput">
                   <option value="balanced">Scale melody</option>
-                  <option value="goto-music-move37">Go to Music crescendo</option>
+                  <option value="goto-music-move37" selected>Go to Music crescendo</option>
                   <option value="wide">Wider melody</option>
                   <option value="pentatonic">Pentatonic melody</option>
                   <option value="chromatic">Chromatic color</option>
@@ -154,7 +158,7 @@
                 <select id="noteLengthInput">
                   <option value="1">Natural</option>
                   <option value="0.65">Short</option>
-                  <option value="1.35">Lingering</option>
+                  <option value="1.35" selected>Lingering</option>
                 </select>
               </label>
             </div>
@@ -187,6 +191,46 @@
                   <option value="transition">Transition</option>
                   <option value="organic-unity">Organic Unity</option>
                 </select>
+              </label>
+              <label class="field">
+                <span>Tactical accents</span>
+                <select id="tacticalAccentModeInput">
+                  <option value="subtle">Subtle</option>
+                  <option value="off">Off</option>
+                  <option value="dramatic">Dramatic</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Tactical intensity</span>
+                <input id="tacticalIntensityInput" type="range" min="0.5" max="1.6" step="0.1" value="1" />
+              </label>
+              <label class="field">
+                <span>Fight scale step</span>
+                <input id="fightIntervalInput" type="number" min="-5" max="5" step="1" value="2" />
+              </label>
+              <label class="field">
+                <span>Atari scale step</span>
+                <input id="atariIntervalInput" type="number" min="-5" max="5" step="1" value="1" />
+              </label>
+              <label class="field">
+                <span>Capture scale step</span>
+                <input id="captureIntervalInput" type="number" min="-7" max="7" step="1" value="3" />
+              </label>
+              <label class="field">
+                <span>Ko scale step</span>
+                <input id="koIntervalInput" type="number" min="-5" max="5" step="1" value="1" />
+              </label>
+              <label class="field">
+                <span>Fight pace</span>
+                <input id="fightPaceInput" type="range" min="1" max="1.8" step="0.05" value="1.22" />
+              </label>
+              <label class="field">
+                <span>Capture pace</span>
+                <input id="capturePaceInput" type="range" min="0.45" max="1" step="0.05" value="0.78" />
+              </label>
+              <label class="field">
+                <span>Pace carry</span>
+                <input id="tacticalPaceCarryInput" type="number" min="0" max="4" step="1" value="1" />
               </label>
             </div>
           </details>

@@ -23,6 +23,16 @@ const scaleInput = document.querySelector("#scaleInput");
 const chordInput = document.querySelector("#chordInput");
 const musicModeInput = document.querySelector("#musicModeInput");
 const neighborhoodInput = document.querySelector("#neighborhoodInput");
+const tacticalAccentsInput = document.querySelector("#tacticalAccentsInput");
+const tacticalAccentModeInput = document.querySelector("#tacticalAccentModeInput");
+const tacticalIntensityInput = document.querySelector("#tacticalIntensityInput");
+const fightIntervalInput = document.querySelector("#fightIntervalInput");
+const atariIntervalInput = document.querySelector("#atariIntervalInput");
+const captureIntervalInput = document.querySelector("#captureIntervalInput");
+const koIntervalInput = document.querySelector("#koIntervalInput");
+const fightPaceInput = document.querySelector("#fightPaceInput");
+const capturePaceInput = document.querySelector("#capturePaceInput");
+const tacticalPaceCarryInput = document.querySelector("#tacticalPaceCarryInput");
 const registerInput = document.querySelector("#registerInput");
 const textureInput = document.querySelector("#textureInput");
 const noteLengthInput = document.querySelector("#noteLengthInput");
@@ -260,10 +270,11 @@ function collectGroup(board, x, y) {
 }
 
 function applyMove(board, move) {
-  if (move.pass || board[move.y]?.[move.x]) return { captures: 0 };
+  if (move.pass || board[move.y]?.[move.x]) return { captures: 0, capturedStones: [], ownLiberties: 0, koLike: false };
   board[move.y][move.x] = move.color;
   const opponent = move.color === "B" ? "W" : "B";
   let captures = 0;
+  const capturedStones = [];
 
   for (const [nx, ny] of neighbors(move.x, move.y, board.length)) {
     if (board[ny][nx] !== opponent) continue;
@@ -271,19 +282,21 @@ function applyMove(board, move) {
     if (group.liberties === 0) {
       captures += group.stones.length;
       group.stones.forEach(([sx, sy]) => {
+        capturedStones.push([sx, sy]);
         board[sy][sx] = null;
       });
     }
   }
 
   const ownGroup = collectGroup(board, move.x, move.y);
+  const ownLiberties = ownGroup.liberties;
   if (ownGroup.liberties === 0) {
     ownGroup.stones.forEach(([sx, sy]) => {
       board[sy][sx] = null;
     });
   }
 
-  return { captures };
+  return { captures, capturedStones, ownLiberties, koLike: captures === 1 && ownLiberties === 1 };
 }
 
 function pickTexture(color, x, y, seed) {
@@ -382,28 +395,22 @@ function drawBoard(board, activeMove = null, progress = 1, game = null, seed = 0
 
   if (activeEntry?.displayLabel) {
     const badgeText = `Move ${activeEntry.moveNumber}: ${activeEntry.displayLabel}`;
-    ctx.font = `800 ${Math.round(width * 0.026)}px Inter, sans-serif`;
-    const badgeWidth = ctx.measureText(badgeText).width + width * 0.052;
-    const badgeHeight = width * 0.052;
-    const badgeX = (width - badgeWidth) / 2;
-    const badgeY = pad * 0.24;
-    ctx.fillStyle = "rgba(20, 13, 8, 0.82)";
-    ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
-    ctx.fillStyle = "#fff4db";
+    ctx.font = `800 ${Math.round(width * 0.025)}px Inter, sans-serif`;
+    ctx.fillStyle = "rgba(42, 25, 12, 0.88)";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(badgeText, width / 2, badgeY + badgeHeight / 2);
+    ctx.fillText(badgeText, width / 2, pad * 0.52);
     ctx.textAlign = "start";
     ctx.textBaseline = "alphabetic";
   }
 
-  ctx.fillStyle = "rgba(30, 19, 11, 0.78)";
-  ctx.font = `${Math.round(width * 0.023)}px Georgia, serif`;
+  ctx.fillStyle = "rgba(30, 19, 11, 0.9)";
+  ctx.font = `700 ${Math.round(width * 0.023)}px Georgia, serif`;
   ctx.fillText(title.black, pad, width - pad * 0.42);
   const whiteWidth = ctx.measureText(title.white).width;
   ctx.fillText(title.white, width - pad - whiteWidth, width - pad * 0.42);
   if (title.date) {
-    ctx.font = `${Math.round(width * 0.019)}px Georgia, serif`;
+    ctx.font = `700 ${Math.round(width * 0.019)}px Georgia, serif`;
     const dateWidth = ctx.measureText(title.date).width;
     ctx.fillText(title.date, (width - dateWidth) / 2, width - pad * 0.42);
   }
@@ -459,6 +466,33 @@ function getFlowSettings() {
     connection: connectionInput?.value || (legatoInput?.checked ? "legato" : "natural"),
     texture: textureStyleInput?.value || "blend",
     structure: structureInput?.value || "through-composed",
+  };
+}
+
+function getTacticalSettings() {
+  if (tacticalAccentModeInput) {
+    return {
+      mode: tacticalAccentModeInput.value,
+      intensity: Number(tacticalIntensityInput?.value) || 1,
+      fightInterval: Number(fightIntervalInput?.value) || 2,
+      atariInterval: Number(atariIntervalInput?.value) || 1,
+      captureInterval: Number(captureIntervalInput?.value) || 3,
+      koInterval: Number(koIntervalInput?.value) || 1,
+      fightPace: Number(fightPaceInput?.value) || 1.22,
+      capturePace: Number(capturePaceInput?.value) || 0.78,
+      paceCarry: Math.max(0, Number(tacticalPaceCarryInput?.value) || 0),
+    };
+  }
+  return {
+    mode: tacticalAccentsInput?.checked ? "subtle" : "off",
+    intensity: 0.62,
+    fightInterval: 2,
+    atariInterval: 1,
+    captureInterval: 3,
+    koInterval: 1,
+    fightPace: 1.22,
+    capturePace: 0.78,
+    paceCarry: 1,
   };
 }
 
@@ -640,6 +674,31 @@ function playableMidiForInstrument(midi, instrumentName) {
   return nearestAvailableMidi(midi, instrument.midis);
 }
 
+function scaleStepMidi(game, midi, settings, stepOffset) {
+  const pool = buildNotePool(game, settings).slice().sort((a, b) => a - b);
+  if (!pool.length) return midi + stepOffset;
+  const nearestIndex = pool.reduce(
+    (best, note, index) => (Math.abs(note - midi) < Math.abs(pool[best] - midi) ? index : best),
+    0,
+  );
+  const targetIndex = Math.max(0, Math.min(pool.length - 1, nearestIndex + stepOffset));
+  return pool[targetIndex];
+}
+
+function updateTacticalState(state, tactics) {
+  const next = {
+    tension: state.tension * 0.58,
+    release: state.release * 0.5,
+  };
+  if (tactics.fight || tactics.opponentAtari || tactics.ownAtari) next.tension = Math.min(1, next.tension + 0.46);
+  if (tactics.koLike) next.tension = Math.min(1, next.tension + 0.26);
+  if (tactics.captures > 0) {
+    next.release = Math.min(1, next.release + 0.72);
+    next.tension *= 0.38;
+  }
+  return next;
+}
+
 function chordForMidi(game, midi, settings = getCurrentSettings()) {
   const chord = chordModes[settings.chord] || chordModes.none;
   if (!chord.length) return [midi];
@@ -654,6 +713,84 @@ function chordForMidi(game, midi, settings = getCurrentSettings()) {
     return midi + interval - scale[start];
   });
   return [...new Set(chordMidis.map((note) => nearestAvailableMidi(note, pool)))];
+}
+
+function analyzeMoveTactics(game, board, move, moveResult) {
+  const empty = {
+    captures: moveResult.captures || 0,
+    ownLiberties: moveResult.ownLiberties || 0,
+    opponentAtari: false,
+    ownAtari: false,
+    fight: false,
+    koLike: Boolean(moveResult.koLike),
+  };
+  if (move.pass || !board[move.y]?.[move.x]) return empty;
+
+  const opponent = move.color === "B" ? "W" : "B";
+  const seenGroups = new Set();
+  let opponentAtari = false;
+  let opponentLowLiberty = false;
+
+  for (const [nx, ny] of neighbors(move.x, move.y, game.size)) {
+    if (board[ny][nx] !== opponent) continue;
+    const group = collectGroup(board, nx, ny);
+    const key = group.stones.map(([sx, sy]) => `${sx},${sy}`).sort().join("|");
+    if (seenGroups.has(key)) continue;
+    seenGroups.add(key);
+    if (group.liberties === 1) opponentAtari = true;
+    if (group.liberties <= 2) opponentLowLiberty = true;
+  }
+
+  const ownAtari = empty.ownLiberties === 1;
+  return {
+    ...empty,
+    opponentAtari,
+    ownAtari,
+    fight: empty.captures > 0 || opponentLowLiberty || ownAtari || empty.ownLiberties === 2,
+  };
+}
+
+function getTacticalAccents(tactics, settings, state = { tension: 0, release: 0 }) {
+  if (settings.mode === "off") return [];
+  const dramatic = settings.mode === "dramatic";
+  const notes = [];
+  const tension = Math.max(state.tension, tactics.fight || tactics.ownAtari || tactics.opponentAtari ? 0.55 : 0);
+  const release = Math.max(state.release, tactics.captures > 0 ? 0.72 : 0);
+
+  if (tactics.fight) notes.push({ step: settings.fightInterval, label: "fight", delay: 0.04, durationScale: 0.74, intensity: 0.5 + tension * 0.32 });
+  if (tactics.opponentAtari || tactics.ownAtari) notes.push({ step: tactics.ownAtari ? settings.atariInterval : -settings.atariInterval, label: "atari", delay: 0.08, durationScale: 0.56, intensity: 0.38 + tension * 0.28 });
+  if (tactics.captures > 0) notes.push({ step: settings.captureInterval, label: "capture", delay: 0.02, durationScale: 1.05, intensity: 0.68 + release * 0.34 });
+  if (tactics.koLike) {
+    notes.push({ step: settings.koInterval, label: "ko", delay: 0.03, durationScale: 0.38, intensity: 0.42 + tension * 0.2 });
+    notes.push({ step: 0, label: "ko", delay: 0.17, durationScale: 0.38, intensity: 0.36 + tension * 0.18 });
+  }
+  if (dramatic && tension > 0.55) notes.push({ step: Math.sign(settings.fightInterval || 1) * 4, label: "fight", delay: 0.14, durationScale: 0.7, intensity: 0.38 + tension * 0.24 });
+  if (!dramatic && notes.length > 1 && release < 0.5) {
+    notes.sort((a, b) => b.intensity - a.intensity);
+  }
+
+  return notes.slice(0, dramatic ? 5 : 3);
+}
+
+function buildTacticalNotes(game, midi, tactics, settings, melodicInstruments, tacticalState) {
+  const tacticalSettings = getTacticalSettings();
+  const accents = getTacticalAccents(tactics, tacticalSettings, tacticalState);
+  if (!accents.length || !melodicInstruments.length) return [];
+
+  const poolSettings = { ...settings, instrument: melodicInstruments[0] };
+  return accents.flatMap((accent) => {
+    const target = scaleStepMidi(game, midi, poolSettings, accent.step);
+    return melodicInstruments.map((instrument) => ({
+      instrument,
+      sampleName: midiToSampleName(playableMidiForInstrument(target, instrument)),
+      kind: "tactical",
+      label: accent.label,
+      delay: accent.delay,
+      durationScale: accent.durationScale,
+      intensity: tacticalSettings.intensity * accent.intensity,
+      midi: target,
+    }));
+  });
 }
 
 function getMoodProfile(name) {
@@ -1011,10 +1148,11 @@ async function ensureDecodedSample(decoded, audio, instrument, sampleName) {
   return decoded.get(key);
 }
 
-function buildMoveEntry(game, board, move, index, captures) {
+function buildMoveEntry(game, board, move, index, moveResult, tacticalState = { tension: 0, release: 0 }) {
   const flow = getFlowSettings();
   const settings = getRegionSettings(move, game);
   const rangeSettings = getRangeSettings(index + 1);
+  const captures = moveResult.captures || 0;
   const layerInstruments = rangeSettings.instruments.length ? [...(settings.instruments || [settings.instrument]), ...rangeSettings.instruments] : settings.instruments || [settings.instrument];
   const uniqueInstruments = [...new Set(layerInstruments)];
   const melodicInstruments = uniqueInstruments.filter((name) => melodicInstrumentNames.includes(name));
@@ -1025,14 +1163,27 @@ function buildMoveEntry(game, board, move, index, captures) {
   const gotoMusic = settings.musicMode === "goto-music-move37" ? noteForGotoMusicMove(game, move, noteSettings) : null;
   const chord = chordForMidi(game, midi, noteSettings);
   const textureNotes = flow.texture === "homophony" ? chord.slice(0, Math.max(1, Math.min(2, chord.length))) : chord;
-  const displayLabel = gotoMusic ? gotoMusic.label : describeMoveNotes(textureNotes, midi);
+  const tactics = analyzeMoveTactics(game, board, move, moveResult);
   const melodicNotes = melodicInstruments.flatMap((instrument) =>
-    textureNotes.map((note) => ({ instrument, sampleName: midiToSampleName(playableMidiForInstrument(note, instrument)), kind: "melodic" })),
+    textureNotes.map((note) => ({
+      instrument,
+      sampleName: midiToSampleName(playableMidiForInstrument(note, instrument)),
+      kind: "melodic",
+      midi: note,
+      delay: 0,
+      durationScale: 1,
+      intensity: 1,
+    })),
   );
+  const tacticalNotes = buildTacticalNotes(game, midi, tactics, noteSettings, melodicInstruments, tacticalState);
+  const displayLabel = describeMoveNotes([...textureNotes, ...tacticalNotes.map((note) => note.midi)], midi);
   const percussionNotes = percussionInstruments.map((instrument) => ({
     instrument,
     sampleName: percussionSamples[instrument],
     kind: "percussion",
+    delay: 0,
+    durationScale: 1,
+    intensity: 1,
   }));
   return {
     move,
@@ -1041,10 +1192,12 @@ function buildMoveEntry(game, board, move, index, captures) {
     midi,
     gotoMusic,
     displayLabel,
+    tactics,
     settings: noteSettings,
     rangeSettings,
     flow,
-    notes: [...melodicNotes, ...percussionNotes],
+    chordSize: Math.max(1, melodicNotes.length + percussionNotes.length),
+    notes: [...melodicNotes, ...tacticalNotes, ...percussionNotes],
   };
 }
 
@@ -1121,7 +1274,8 @@ function playNote(audio, output, buffer, when, duration, color, captures, overla
   gain.gain.setValueAtTime(0.0001, when);
   const volume = Number(volumeInput.value);
   const chordTrim = 1 / Math.sqrt(chordSize);
-  const peak = (0.34 + Math.min(captures, 3) * 0.038) * volume * chordTrim * profile.volume;
+  const intensity = articulation.intensity ?? 1;
+  const peak = (0.34 + Math.min(captures, 3) * 0.038) * volume * chordTrim * profile.volume * intensity;
   const sustain = peak * 0.58;
   gain.gain.exponentialRampToValueAtTime(peak, when + attack);
   gain.gain.exponentialRampToValueAtTime(sustain, sustainUntil);
@@ -1187,6 +1341,8 @@ async function playGame(game, { record = false } = {}) {
   const frameMs = 1000 / 30;
   let activeDrone = null;
   let activeDroneKey = "";
+  let tacticalPaceBoost = null;
+  let tacticalState = { tension: 0, release: 0 };
   let recorder = null;
   let chunks = [];
 
@@ -1207,11 +1363,25 @@ async function playGame(game, { record = false } = {}) {
     if (abort.cancelled) break;
     const move = game.moves[index];
     const result = applyMove(board, move);
-    const entry = buildMoveEntry(game, board, move, index, result.captures);
+    const entry = buildMoveEntry(game, board, move, index, result, tacticalState);
+    tacticalState = updateTacticalState(tacticalState, entry.tactics);
     const rangeSettings = entry.rangeSettings;
     const flow = entry.flow;
     const profile = getMoodProfile(entry.settings.mood !== "neutral" ? entry.settings.mood : rangeSettings.mood);
-    const movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value));
+    let movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value));
+    if (tacticalPaceBoost?.remaining > 0) {
+      movePace *= tacticalPaceBoost.multiplier;
+      tacticalPaceBoost.remaining -= 1;
+      if (tacticalPaceBoost.remaining <= 0) tacticalPaceBoost = null;
+    }
+    const tacticalSettings = getTacticalSettings();
+    if (entry.tactics.captures > 0) {
+      tacticalPaceBoost = { multiplier: tacticalSettings.capturePace, remaining: tacticalSettings.paceCarry };
+      movePace *= tacticalSettings.capturePace;
+    } else if (entry.tactics.fight || entry.tactics.opponentAtari || entry.tactics.ownAtari) {
+      tacticalPaceBoost = { multiplier: tacticalSettings.fightPace, remaining: tacticalSettings.paceCarry };
+      movePace *= tacticalSettings.fightPace;
+    }
     const moveMs = movePace * 1000;
     const isLegato = flow.connection === "legato" || rangeSettings.legato || entry.settings.legato;
     const connectionShape = {
@@ -1264,19 +1434,20 @@ async function playGame(game, { record = false } = {}) {
     for (const [chordIndex, note] of entry.notes.entries()) {
       const sample = await ensureDecodedSample(samples, audio, note.instrument, note.sampleName);
       if (abort.cancelled) break;
-      const scheduledTime = audio.currentTime + 0.014 + chordIndex * connectionShape.stagger;
+      const noteIntensity = note.kind === "tactical" ? 0.58 * (note.intensity ?? 1) : note.intensity ?? 1;
+      const scheduledTime = audio.currentTime + 0.014 + chordIndex * connectionShape.stagger + (note.delay || 0);
       playNote(
         audio,
         audioOutput,
         sample,
         scheduledTime,
-        noteDuration,
+        noteDuration * (note.durationScale || 1),
         move.color,
         result.captures,
-        noteOverlap,
-        entry.notes.length,
+        noteOverlap * (note.durationScale || 1),
+        note.kind === "tactical" ? Math.max(1, entry.chordSize + 1) : entry.chordSize,
         profile,
-        { legato: isLegato },
+        { legato: isLegato, intensity: noteIntensity },
       );
     }
     const started = performance.now();
