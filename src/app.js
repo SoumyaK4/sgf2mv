@@ -17,6 +17,8 @@ const textureStyleInput = document.querySelector("#textureStyleInput");
 const structureInput = document.querySelector("#structureInput");
 const sizeInput = document.querySelector("#sizeInput");
 const instrumentInput = document.querySelector("#instrumentInput");
+const blackInstrumentInput = document.querySelector("#blackInstrumentInput");
+const whiteInstrumentInput = document.querySelector("#whiteInstrumentInput");
 const scaleInput = document.querySelector("#scaleInput");
 const chordInput = document.querySelector("#chordInput");
 const musicModeInput = document.querySelector("#musicModeInput");
@@ -32,6 +34,45 @@ const canvas = document.querySelector("#boardCanvas");
 const ctx = canvas.getContext("2d");
 const settingsGroups = [...document.querySelectorAll(".settings-group")];
 const hirajoshiPitchClasses = [2, 3, 7, 9, 10];
+const noteLabelToMidi = {
+  C: 0,
+  Cs: 1,
+  Db: 1,
+  D: 2,
+  Ds: 3,
+  Eb: 3,
+  E: 4,
+  F: 5,
+  Fs: 6,
+  Gb: 6,
+  G: 7,
+  Gs: 8,
+  Ab: 8,
+  A: 9,
+  As: 10,
+  Bb: 10,
+  B: 11,
+};
+const gotoMusicScale = [
+  { index: 1, label: "G3", midi: 55 },
+  { index: 2, label: "A3", midi: 57 },
+  { index: 3, label: "Bb3", midi: 58 },
+  { index: 4, label: "D4", midi: 62 },
+  { index: 5, label: "Eb4", midi: 63 },
+  { index: 6, label: "G4", midi: 67 },
+  { index: 7, label: "A4", midi: 69 },
+  { index: 8, label: "Bb4", midi: 70 },
+  { index: 9, label: "D5", midi: 74 },
+  { index: 10, label: "Eb5", midi: 75 },
+  { index: 11, label: "G5", midi: 79 },
+  { index: 12, label: "A5", midi: 81 },
+  { index: 13, label: "Bb5", midi: 82 },
+  { index: 14, label: "D6", midi: 86 },
+  { index: 15, label: "Eb6", midi: 87 },
+  { index: 16, label: "G6", midi: 91 },
+  { index: 17, label: "A6", midi: 93 },
+  { index: 18, label: "Bb6", midi: 94 },
+];
 
 let loadedGame = null;
 let playbackAbort = { cancelled: false };
@@ -40,6 +81,7 @@ let activeRecorder = null;
 
 const letters = "abcdefghijklmnopqrstuvwxyz";
 const scaleModes = {
+  "korean-pentatonic": [7, 9, 10, 2, 3],
   major: [0, 2, 4, 5, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10],
 };
@@ -63,6 +105,7 @@ const moodProfiles = {
   sad: { label: "Sad", pace: 1.28, duration: 1.14, overlap: 1.16, attack: 1.28, release: 1.24, brightness: 0.76, volume: 0.82 },
 };
 const noteNames = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+const displayNoteNames = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const sampleNameToMidi = (name) => {
   const match = name.match(/^([A-G]s?)(-?\d+)$/);
   if (!match) return null;
@@ -262,7 +305,7 @@ function getBoardTitle(game) {
   };
 }
 
-function drawBoard(board, activeMove = null, progress = 1, game = null, seed = 0) {
+function drawBoard(board, activeMove = null, progress = 1, game = null, seed = 0, activeEntry = null) {
   const size = board.length;
   const width = canvas.width;
   const pad = width * 0.085;
@@ -337,6 +380,23 @@ function drawBoard(board, activeMove = null, progress = 1, game = null, seed = 0
     ctx.stroke();
   }
 
+  if (activeEntry?.displayLabel) {
+    const badgeText = `Move ${activeEntry.moveNumber}: ${activeEntry.displayLabel}`;
+    ctx.font = `800 ${Math.round(width * 0.026)}px Inter, sans-serif`;
+    const badgeWidth = ctx.measureText(badgeText).width + width * 0.052;
+    const badgeHeight = width * 0.052;
+    const badgeX = (width - badgeWidth) / 2;
+    const badgeY = pad * 0.24;
+    ctx.fillStyle = "rgba(20, 13, 8, 0.82)";
+    ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
+    ctx.fillStyle = "#fff4db";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(badgeText, width / 2, badgeY + badgeHeight / 2);
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
+  }
+
   ctx.fillStyle = "rgba(30, 19, 11, 0.78)";
   ctx.font = `${Math.round(width * 0.023)}px Georgia, serif`;
   ctx.fillText(title.black, pad, width - pad * 0.42);
@@ -380,9 +440,10 @@ function drawStone(x, y, r, color, texture) {
 }
 
 function getCurrentSettings() {
+  const instrument = instrumentInput?.value || blackInstrumentInput?.value || "piano";
   return {
-    instrument: instrumentInput.value,
-    instruments: [instrumentInput.value],
+    instrument,
+    instruments: [instrument],
     scale: scaleInput.value,
     chord: chordInput.value,
     musicMode: neighborhoodInput?.checked ? "hirajoshi-neighborhood" : musicModeInput.value,
@@ -407,11 +468,12 @@ function getComposition(game, settings = getCurrentSettings()) {
     balanced: selectedScale,
     wide: selectedScale,
     pentatonic: [0, 2, 4, 7, 9],
+    "goto-music-move37": [7, 9, 10, 2, 3],
     "hirajoshi-neighborhood": [0, 1, 5, 7, 8],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     all: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   };
-  const root = settings.musicMode === "hirajoshi-neighborhood" ? 38 : 36 + (game.seed % 12);
+  const root = settings.musicMode === "hirajoshi-neighborhood" || settings.musicMode === "goto-music-move37" ? 55 : 36 + (game.seed % 12);
   const scale = modeScales[settings.musicMode] || modeScales.balanced;
   return { root, scale };
 }
@@ -422,9 +484,31 @@ function midiToSampleName(midi) {
   return `${noteNames[clamped % 12]}${octave}`;
 }
 
+function midiToDisplayName(midi) {
+  const clamped = Math.max(0, Math.round(midi));
+  const octave = Math.floor(clamped / 12) - 1;
+  return `${displayNoteNames[clamped % 12]}${octave}`;
+}
+
+function describeMoveNotes(notes, fallbackMidi = null) {
+  const labels = [...new Set(notes.map((midi) => midiToDisplayName(midi)))];
+  if (labels.length) return labels.join(" / ");
+  return fallbackMidi === null ? "" : midiToDisplayName(fallbackMidi);
+}
+
 function getInstrument(settings = getCurrentSettings()) {
   const instrumentName = settings.instrument || settings.instruments?.find((name) => melodicInstrumentNames.includes(name)) || "piano";
   return instrumentSamples[instrumentName] || instrumentSamples.piano;
+}
+
+function getSimpleInstrumentLabel() {
+  if (regionRows.length) return "complex";
+  if (blackInstrumentInput || whiteInstrumentInput) {
+    const black = blackInstrumentInput?.selectedOptions?.[0]?.textContent || "Piano";
+    const white = whiteInstrumentInput?.selectedOptions?.[0]?.textContent || "Guitar";
+    return `${black.toLowerCase()} / ${white.toLowerCase()}`;
+  }
+  return instrumentInput?.selectedOptions?.[0]?.textContent?.toLowerCase() || "piano";
 }
 
 function buildNotePool(game, settings = getCurrentSettings()) {
@@ -448,6 +532,7 @@ function buildNotePool(game, settings = getCurrentSettings()) {
 }
 
 function noteForMove(game, move, index, captures, settings = getCurrentSettings()) {
+  if (settings.musicMode === "goto-music-move37") return noteForGotoMusicMove(game, move, settings).midi;
   if (settings.musicMode === "hirajoshi-neighborhood") return noteForNeighborhoodMove(game, move, settings);
 
   const pool = buildNotePool(game, settings);
@@ -465,6 +550,53 @@ function noteForMove(game, move, index, captures, settings = getCurrentSettings(
   }
 
   return primary;
+}
+
+function getGotoMusicNeighborhood(game, move, board) {
+  if (!board || move.pass) return { index: 1, occupiedNeighbors: 0, density: 0 };
+  let score = 0;
+  let occupiedNeighbors = 0;
+  let occupiedTotal = 0;
+
+  board.forEach((row) => {
+    row.forEach((stone) => {
+      if (stone) occupiedTotal += 1;
+    });
+  });
+
+  for (let y = move.y - 1; y <= move.y + 1; y += 1) {
+    for (let x = move.x - 1; x <= move.x + 1; x += 1) {
+      if (x < 0 || y < 0 || x >= game.size || y >= game.size) continue;
+      const stone = board[y][x];
+      if (!stone) continue;
+      score += stone === "B" ? 1 : 2;
+      occupiedNeighbors += 1;
+    }
+  }
+
+  return {
+    index: Math.max(1, Math.min(gotoMusicScale.length, score)),
+    occupiedNeighbors,
+    density: occupiedTotal / (game.size * game.size),
+  };
+}
+
+function getGotoMusicIndex(game, move, board) {
+  return getGotoMusicNeighborhood(game, move, board).index;
+}
+
+function noteForGotoMusicMove(game, move, settings = getCurrentSettings()) {
+  const neighborhood = getGotoMusicNeighborhood(game, move, settings.board);
+  const crescendoSteps = Math.floor(neighborhood.density * 5) + Math.floor(Math.max(0, neighborhood.occupiedNeighbors - 2) / 4);
+  const index = Math.min(gotoMusicScale.length, neighborhood.index + crescendoSteps);
+  if (settings.scale === "korean-pentatonic") return gotoMusicScale[index - 1];
+
+  const scale = scaleModes[settings.scale] || scaleModes.major;
+  const base = noteLabelToMidi.G + 12 * 4;
+  const degree = index - 1;
+  const octaveOffset = Math.floor(degree / scale.length) * 12;
+  const midi = base + scale[degree % scale.length] + octaveOffset;
+  return { index, label: midiToDisplayName(midi), midi };
 }
 
 function noteForNeighborhoodMove(game, move, settings = getCurrentSettings()) {
@@ -501,6 +633,11 @@ function noteForNeighborhoodMove(game, move, settings = getCurrentSettings()) {
 
 function nearestAvailableMidi(target, pool) {
   return pool.reduce((nearest, midi) => (Math.abs(midi - target) < Math.abs(nearest - target) ? midi : nearest), pool[0]);
+}
+
+function playableMidiForInstrument(midi, instrumentName) {
+  const instrument = instrumentSamples[instrumentName] || instrumentSamples.piano;
+  return nearestAvailableMidi(midi, instrument.midis);
 }
 
 function chordForMidi(game, midi, settings = getCurrentSettings()) {
@@ -567,6 +704,7 @@ function getOptionalCheckedValues(container, selector) {
 
 function initializeRegionRows() {
   const scales = [
+    { value: "korean-pentatonic", label: "Korean pentatonic" },
     { value: "major", label: "Major" },
     { value: "minor", label: "Minor" },
   ];
@@ -579,6 +717,7 @@ function initializeRegionRows() {
   ];
   const musicModes = [
     { value: "balanced", label: "Scale melody" },
+    { value: "goto-music-move37", label: "Go to Music crescendo" },
     { value: "wide", label: "Wider melody" },
     { value: "pentatonic", label: "Pentatonic melody" },
     { value: "chromatic", label: "Chromatic color" },
@@ -772,18 +911,35 @@ function getRegionName(move, size) {
 }
 
 function getRegionSettings(move, game) {
+  if (!regionRows.length && (blackInstrumentInput || whiteInstrumentInput)) {
+    const instrument = move.color === "B" ? blackInstrumentInput?.value || "piano" : whiteInstrumentInput?.value || "guitar";
+    return {
+      instrument,
+      instruments: [instrument],
+      scale: scaleInput.value,
+      chord: chordInput.value,
+      musicMode: musicModeInput.value,
+      register: registerInput.value,
+      mood: "neutral",
+      legato: Boolean(legatoInput?.checked),
+      drone: false,
+    };
+  }
+
   const region = getRegionName(move, game.size);
   const row = regionRows.find((item) => item.dataset.region === region);
   if (!row || !row.querySelector(".region-enabled").checked) return getCurrentSettings();
+  const instruments = getCheckedValues(row, ".region-instrument-option");
   return {
-    instruments: getCheckedValues(row, ".region-instrument-option"),
-    instrument: getCheckedValues(row, ".region-instrument-option").find((name) => melodicInstrumentNames.includes(name)) || "piano",
+    instruments,
+    instrument: instruments.find((name) => melodicInstrumentNames.includes(name)) || "piano",
     scale: row.querySelector(".region-scale").value,
     chord: row.querySelector(".region-chord").value,
     musicMode: row.querySelector(".region-neighborhood").checked ? "hirajoshi-neighborhood" : row.querySelector(".region-music-mode").value,
     register: row.querySelector(".region-register").value,
     mood: row.querySelector(".region-mood").value,
     legato: row.querySelector(".region-legato").checked,
+    drone: Boolean(droneInput?.checked),
   };
 }
 
@@ -849,38 +1005,47 @@ async function preloadSamples(audio, timeline, game) {
   return decoded;
 }
 
-function buildTimeline(game) {
-  const board = createBoard(game.size);
+async function ensureDecodedSample(decoded, audio, instrument, sampleName) {
+  const key = `${instrument}/${sampleName}`;
+  if (!decoded.has(key)) decoded.set(key, await getSampleBuffer(audio, instrument, sampleName));
+  return decoded.get(key);
+}
+
+function buildMoveEntry(game, board, move, index, captures) {
   const flow = getFlowSettings();
-  return game.moves.map((move, index) => {
-    const result = applyMove(board, move);
-    const settings = getRegionSettings(move, game);
-    const rangeSettings = getRangeSettings(index + 1);
-    const layerInstruments = rangeSettings.instruments.length ? [...(settings.instruments || [settings.instrument]), ...rangeSettings.instruments] : settings.instruments || [settings.instrument];
-    const uniqueInstruments = [...new Set(layerInstruments)];
-    const melodicInstruments = uniqueInstruments.filter((name) => melodicInstrumentNames.includes(name));
-    const percussionInstruments = uniqueInstruments.filter((name) => percussionSamples[name]);
-    const leadInstrument = melodicInstruments[0] || "piano";
-    const noteSettings = { ...settings, instrument: leadInstrument, board };
-    const midi = noteForMove(game, move, index, result.captures, { ...settings, board });
-    const chord = chordForMidi(game, midi, noteSettings);
-    const textureNotes = flow.texture === "homophony" ? chord.slice(0, Math.max(1, Math.min(2, chord.length))) : chord;
-    const melodicNotes = melodicInstruments.flatMap((instrument) =>
-      textureNotes.map((note) => ({ instrument, sampleName: midiToSampleName(note), kind: "melodic" })),
-    );
-    const percussionNotes = percussionInstruments.map((instrument) => ({
-      instrument,
-      sampleName: percussionSamples[instrument],
-      kind: "percussion",
-    }));
-    return {
-      move,
-      captures: result.captures,
-      midi,
-      settings: noteSettings,
-      notes: [...melodicNotes, ...percussionNotes],
-    };
-  });
+  const settings = getRegionSettings(move, game);
+  const rangeSettings = getRangeSettings(index + 1);
+  const layerInstruments = rangeSettings.instruments.length ? [...(settings.instruments || [settings.instrument]), ...rangeSettings.instruments] : settings.instruments || [settings.instrument];
+  const uniqueInstruments = [...new Set(layerInstruments)];
+  const melodicInstruments = uniqueInstruments.filter((name) => melodicInstrumentNames.includes(name));
+  const percussionInstruments = uniqueInstruments.filter((name) => percussionSamples[name]);
+  const leadInstrument = melodicInstruments[0] || "piano";
+  const noteSettings = { ...settings, instrument: leadInstrument, board };
+  const midi = noteForMove(game, move, index, captures, noteSettings);
+  const gotoMusic = settings.musicMode === "goto-music-move37" ? noteForGotoMusicMove(game, move, noteSettings) : null;
+  const chord = chordForMidi(game, midi, noteSettings);
+  const textureNotes = flow.texture === "homophony" ? chord.slice(0, Math.max(1, Math.min(2, chord.length))) : chord;
+  const displayLabel = gotoMusic ? gotoMusic.label : describeMoveNotes(textureNotes, midi);
+  const melodicNotes = melodicInstruments.flatMap((instrument) =>
+    textureNotes.map((note) => ({ instrument, sampleName: midiToSampleName(playableMidiForInstrument(note, instrument)), kind: "melodic" })),
+  );
+  const percussionNotes = percussionInstruments.map((instrument) => ({
+    instrument,
+    sampleName: percussionSamples[instrument],
+    kind: "percussion",
+  }));
+  return {
+    move,
+    moveNumber: index + 1,
+    captures,
+    midi,
+    gotoMusic,
+    displayLabel,
+    settings: noteSettings,
+    rangeSettings,
+    flow,
+    notes: [...melodicNotes, ...percussionNotes],
+  };
 }
 
 function makeImpulseResponse(audio, duration = 1.4, decay = 2.4) {
@@ -1016,16 +1181,9 @@ async function playGame(game, { record = false } = {}) {
   const audioDestination = record ? audio.createMediaStreamDestination() : audio.destination;
   const audioOutput = createAudioOutput(audio, audioDestination);
   const board = createBoard(game.size);
-  const timeline = buildTimeline(game);
-  const instrumentName = regionRows.length ? "complex" : instrumentInput.options[instrumentInput.selectedIndex].textContent.toLowerCase();
-  statusEl.textContent = record ? `Loading ${instrumentName} samples for render...` : `Loading ${instrumentName} samples...`;
-  const samples = await preloadSamples(audio, timeline, game);
-  if (abort.cancelled) {
-    if (audio.state !== "closed") await audio.close();
-    if (activeAudio === audio) activeAudio = null;
-    return record ? null : { stopped: true };
-  }
-  const pace = Number(paceInput.value);
+  const instrumentName = getSimpleInstrumentLabel();
+  statusEl.textContent = record ? `Rendering with ${instrumentName} audio...` : `Playing with ${instrumentName} audio...`;
+  const samples = new Map();
   const frameMs = 1000 / 30;
   let activeDrone = null;
   let activeDroneKey = "";
@@ -1045,15 +1203,15 @@ async function playGame(game, { record = false } = {}) {
 
   drawBoard(board, null, 1, game, game.seed);
   await wait(500);
-  const flow = getFlowSettings();
   for (let index = 0; index < game.moves.length; index += 1) {
     if (abort.cancelled) break;
-    const entry = timeline[index];
-    const move = entry.move;
+    const move = game.moves[index];
     const result = applyMove(board, move);
-    const rangeSettings = getRangeSettings(index + 1);
+    const entry = buildMoveEntry(game, board, move, index, result.captures);
+    const rangeSettings = entry.rangeSettings;
+    const flow = entry.flow;
     const profile = getMoodProfile(entry.settings.mood !== "neutral" ? entry.settings.mood : rangeSettings.mood);
-    const movePace = Math.max(0.22, rangeSettings.pace || pace);
+    const movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value));
     const moveMs = movePace * 1000;
     const isLegato = flow.connection === "legato" || rangeSettings.legato || entry.settings.legato;
     const connectionShape = {
@@ -1075,15 +1233,16 @@ async function playGame(game, { record = false } = {}) {
     }[flow.structure] || { duration: 1, overlap: 1 };
     const noteDuration = movePace * Number(noteLengthInput.value) * profile.duration * connectionShape.duration * structureShape.duration;
     const noteOverlap = Math.min(movePace * 0.68 * profile.overlap * connectionShape.overlap * structureShape.overlap, isLegato ? 1.65 : 1.15);
-    getActiveSustainRows(index + 1).forEach((row) => {
-      if (!shouldPlaySustain(row, index + 1)) return;
+    for (const row of getActiveSustainRows(index + 1)) {
+      if (!shouldPlaySustain(row, index + 1)) continue;
       const instrument = row.querySelector(".sustain-instrument").value;
       const sampleName = getSustainSampleName(game, instrument);
-      const sampleKey = `${instrument}/${sampleName}`;
+      const sample = await ensureDecodedSample(samples, audio, instrument, sampleName);
+      if (abort.cancelled) break;
       playNote(
         audio,
         audioOutput,
-        samples.get(sampleKey),
+        sample,
         audio.currentTime + 0.006,
         movePace * 1.6,
         move.color,
@@ -1093,21 +1252,23 @@ async function playGame(game, { record = false } = {}) {
         profile,
         { legato: isLegato },
       );
-    });
+    }
     const droneSampleName = getLowAnchorSampleName(game, entry.settings);
     const droneSampleKey = `${entry.settings.instrument}/${droneSampleName}`;
     const droneKey = rangeSettings.drone || entry.settings.drone ? `${droneSampleKey}-${profile.label}` : "";
     if (droneKey !== activeDroneKey) {
       stopDrone(audio, activeDrone);
-      activeDrone = droneKey ? startDrone(audio, audioOutput, samples.get(droneSampleKey), profile) : null;
+      activeDrone = droneKey ? startDrone(audio, audioOutput, await ensureDecodedSample(samples, audio, entry.settings.instrument, droneSampleName), profile) : null;
       activeDroneKey = droneKey;
     }
-    entry.notes.forEach((note, chordIndex) => {
+    for (const [chordIndex, note] of entry.notes.entries()) {
+      const sample = await ensureDecodedSample(samples, audio, note.instrument, note.sampleName);
+      if (abort.cancelled) break;
       const scheduledTime = audio.currentTime + 0.014 + chordIndex * connectionShape.stagger;
       playNote(
         audio,
         audioOutput,
-        samples.get(`${note.instrument}/${note.sampleName}`),
+        sample,
         scheduledTime,
         noteDuration,
         move.color,
@@ -1117,13 +1278,13 @@ async function playGame(game, { record = false } = {}) {
         profile,
         { legato: isLegato },
       );
-    });
+    }
     const started = performance.now();
 
     while (performance.now() - started < moveMs) {
       if (abort.cancelled) break;
       const progress = Math.min(1, (performance.now() - started) / moveMs);
-      drawBoard(board, move, progress, game, game.seed);
+      drawBoard(board, move, progress, game, game.seed, entry);
       await wait(frameMs);
     }
 
@@ -1205,7 +1366,7 @@ renderButton.addEventListener("click", async () => {
   renderButton.disabled = true;
   stopButton.disabled = false;
   downloadLink.hidden = true;
-  statusEl.textContent = `Rendering video with ${regionRows.length ? "complex" : instrumentInput.options[instrumentInput.selectedIndex].textContent.toLowerCase()} audio...`;
+  statusEl.textContent = `Rendering video with ${getSimpleInstrumentLabel()} audio...`;
   try {
     const blob = await playGame(loadedGame, { record: true });
     if (!blob) {

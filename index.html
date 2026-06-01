@@ -85,10 +85,7 @@
               <span>Use legato</span>
             </label>
 
-            <label class="field field-inline">
-              <input id="droneInput" type="checkbox" />
-              <span>Use drone</span>
-            </label>
+            <input id="droneInput" type="hidden" value="" />
 
           </details>
 
@@ -96,45 +93,34 @@
             <summary>Music</summary>
             <div class="field-grid">
               <label class="field">
-                <span>Instrument</span>
-                <select id="instrumentInput">
+                <span>Black</span>
+                <select id="blackInstrumentInput">
                   <option value="piano">Piano</option>
                   <option value="guitar">Guitar</option>
                   <option value="harp">Harp</option>
                   <option value="cello">Cello</option>
-                  <option value="violin">Violin</option>
-                  <option value="flute">Flute</option>
-                  <option value="contrabass">Contrabass</option>
                 </select>
               </label>
 
-              <input id="scaleInput" type="hidden" value="major" />
+              <label class="field">
+                <span>White</span>
+                <select id="whiteInstrumentInput">
+                  <option value="piano">Piano</option>
+                  <option value="guitar">Guitar</option>
+                  <option value="harp">Harp</option>
+                  <option value="cello">Cello</option>
+                </select>
+              </label>
+
+              <input id="instrumentInput" type="hidden" value="piano" />
             </div>
 
             <div class="field-grid">
+              <input id="scaleInput" type="hidden" value="korean-pentatonic" />
               <input id="chordInput" type="hidden" value="none" />
-              <input id="musicModeInput" type="hidden" value="hirajoshi-neighborhood" />
-            </div>
-
-            <div class="field-grid">
-              <label class="field">
-                <span>Register</span>
-                <select id="registerInput">
-                  <option value="full">Full range</option>
-                  <option value="middle">Middle range</option>
-                  <option value="high">Higher range</option>
-                  <option value="low">Lower range</option>
-                </select>
-              </label>
-
-              <label class="field">
-                <span>Note length</span>
-                <select id="noteLengthInput">
-                  <option value="1">Natural</option>
-                  <option value="0.65">Short</option>
-                  <option value="1.35">Lingering</option>
-                </select>
-              </label>
+              <input id="musicModeInput" type="hidden" value="goto-music-move37" />
+              <input id="registerInput" type="hidden" value="full" />
+              <input id="noteLengthInput" type="hidden" value="1.35" />
             </div>
           </details>
 
