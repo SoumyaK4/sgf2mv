@@ -38,12 +38,18 @@
         <div class="about-hero">
           <div class="about-content">
             <p class="eyebrow">About</p>
-            <h1>SGF to Music Video turns Go games into a nice music videos.</h1>
+            <h1>SGF to Music Video turns Go games into musical board videos.</h1>
             <p>
               Upload an SGF file and the app parses the move sequence, animates it on a wooden board,
-              and maps each move into deterministic notes. The same game always produces the same
-              musical shape, while controls for scale, chords, instrument, register, pacing, and board
-              texture let each render take on a different character.
+              and maps each move into deterministic notes. The default musical map follows a Go to
+              Music inspired idea: every placed stone is read together with its surrounding eight
+              intersections, black stones count as 1, white stones count as 2, and the sum selects a
+              note from a Korean pentatonic palette.
+            </p>
+            <p>
+              Simple mode is tuned to stay musical quickly. Complex mode opens the same engine up for
+              detailed control over board regions, tactical accents, texture, pacing, bars, phrases,
+              and sustained layers.
             </p>
             <p>
               You can find more Go projects at <a href="https://SoumyaK4.in/">SoumyaK4.in</a>.
@@ -59,6 +65,7 @@
             <ul>
               <li><a href="https://youtu.be/0mwMfDykfZA">GO TO MUSIC - MOVE 37</a></li>
               <li><a href="https://youtu.be/sqHeGRJYsPA">GO TO MUSIC - Ear Reddening</a></li>
+              <li><a href="https://hal.science/hal-05146340v1/file/ICMC_2024_GoTo_Music_Move37.pdf">Go to Music - Move 37 paper</a></li>
             </ul>
           </section>
 
@@ -66,32 +73,50 @@
             <h2>How to use the simple mode</h2>
             <p>
               Open the Simple page, choose an SGF file, then press Play to hear the game locally.
-              Each new stone and its surrounding intersections choose notes from D, Eb, G, A, and
-              Bb, while growing board density gradually lifts the pitch. Use Playback for pace,
-              volume, legato, and drone, Music for instrument and register, and Visuals & Export
-              for board style and video size. Use Render video to export a WebM.
+              The default sound uses the Korean pentatonic Go to Music mapping with a gentle
+              crescendo, lingering notes, and one instrument per player. The board header shows only
+              the move number and the current note or notes.
+            </p>
+            <p>
+              Simple controls stay intentionally small: set move pace, volume, smooth notes, each
+              player's instrument, optional instrument blend, fighting sounds, musical phrasing, and
+              visual export options. Musical phrasing keeps a steady four-move bar and two-bar
+              phrase so tempo and cadence work together while tactical moments can briefly slow down
+              or speed up the next note.
             </p>
           </section>
 
           <section>
             <h2>How to use complex mode</h2>
             <p>
-              Open the Complex page when you want different parts of the board to sound different.
-              Board Parts lets you enable corners, sides, or centre, then assign melodic instruments
-              and musical settings to that area. Flow & Texture controls legato, dovetailing, voice
-              leading, glissando, doubling, homophony, through-composed flow, transitions, and organic
-              unity. Neighborhood notes can be enabled globally or inside individual board parts.
-              Move ranges can add extra instruments, including percussion, for specific phases of the
-              game. Sustained Layers add sounds over the move notes for the whole game or a move
-              range, and the Every field controls whether that layer plays every move, every second
-              move, every third move, and so on.
+              Open the Complex page when you want the full engine. You can choose the default
+              instrument, scale, chord, register, note length, and music map, then override those
+              choices for corners, sides, or the centre of the board.
+            </p>
+            <p>
+              Flow & Texture controls legato, dovetailing, voice leading, glissando, doubling,
+              homophony, through-composed flow, transitions, organic unity, tactical accent intensity,
+              fight/atari/capture/ko intervals, fight and capture pacing, moves per bar, and bars per
+              phrase. Move ranges can add extra instruments, including percussion, for specific phases
+              of the game. Sustained Layers add sounds over the move notes for the whole game or a
+              move range.
+            </p>
+          </section>
+
+          <section>
+            <h2>Playback and updates</h2>
+            <p>
+              Settings are read during playback, so changing instruments, phrasing, tactical accents,
+              tempo, or visual options affects the running game without stopping and starting again.
+              The final move lingers and fades out, and the PWA checks for fresh code when opened or
+              revisited so cached installs refresh more reliably.
             </p>
           </section>
 
           <section>
             <h2>Feedback</h2>
             <p>
-              This is the initial release, so I expect bugs.<br> 
+              This is still evolving, so I expect bugs.<br>
               Also it has been over a decade since I quit music, so kindly let me know if I made any musical mistakes.<br>
               <a href="https://t.me/SoumyaK4">Contact on Telegram</a> or find SoumyaK4 on Instagram/Reddit/Discord.<br>
               P.S. handicap games won't work currently.
