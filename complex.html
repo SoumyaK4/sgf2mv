@@ -97,10 +97,39 @@
           </details>
 
           <details class="settings-group">
-            <summary>Default Music</summary>
+            <summary>Pitch & Harmony</summary>
             <div class="field-grid">
               <label class="field">
-                <span>Instrument</span>
+                <span>Composer preset</span>
+                <select id="complexPresetInput">
+                  <option value="chamber-trio" selected>Chamber trio</option>
+                  <option value="solo-cello-modal">Solo cello modal</option>
+                  <option value="piano-drone">Piano and drone</option>
+                  <option value="harp-pentatonic">Harp pentatonic</option>
+                  <option value="fight-study">Percussive fight study</option>
+                  <option value="ambient-endgame">Ambient endgame</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Key center</span>
+                <select id="rootInput">
+                  <option value="auto">Auto from game</option>
+                  <option value="C">C</option>
+                  <option value="Cs">Db</option>
+                  <option value="D">D</option>
+                  <option value="Ds">Eb</option>
+                  <option value="E">E</option>
+                  <option value="F">F</option>
+                  <option value="Fs">Gb</option>
+                  <option value="G" selected>G</option>
+                  <option value="Gs">Ab</option>
+                  <option value="A">A</option>
+                  <option value="As">Bb</option>
+                  <option value="B">B</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Lead instrument</span>
                 <select id="instrumentInput">
                   <option value="piano">Piano</option>
                   <option value="guitar">Guitar</option>
@@ -112,7 +141,7 @@
                 </select>
               </label>
               <label class="field">
-                <span>Scale</span>
+                <span>Mode / scale</span>
                 <select id="scaleInput">
                   <option value="korean-pentatonic" selected>Korean pentatonic</option>
                   <option value="chinese-pentatonic">Chinese pentatonic</option>
@@ -125,7 +154,7 @@
                 </select>
               </label>
               <label class="field">
-                <span>Chord</span>
+                <span>Harmony</span>
                 <select id="chordInput">
                   <option value="none">None</option>
                   <option value="triad">Triad</option>
@@ -135,7 +164,7 @@
                 </select>
               </label>
               <label class="field">
-                <span>Music map</span>
+                <span>Melodic rule</span>
                 <select id="musicModeInput">
                   <option value="balanced">Scale melody</option>
                   <option value="goto-music-move37" selected>Go to Music crescendo</option>
@@ -170,10 +199,10 @@
           </details>
 
           <details class="settings-group">
-            <summary>Flow & Texture</summary>
+            <summary>Phrasing & Orchestration</summary>
             <div class="field-grid">
               <label class="field">
-                <span>Connection</span>
+                <span>Articulation</span>
                 <select id="connectionInput">
                   <option value="legato">Legato</option>
                   <option value="dovetail">Elision / Dovetailing</option>
@@ -182,7 +211,7 @@
                 </select>
               </label>
               <label class="field">
-                <span>Texture</span>
+                <span>Voicing</span>
                 <select id="textureStyleInput">
                   <option value="blend">Orchestral Blend</option>
                   <option value="doubling">Doubling</option>
@@ -190,7 +219,7 @@
                 </select>
               </label>
               <label class="field">
-                <span>Structure</span>
+                <span>Form</span>
                 <select id="structureInput">
                   <option value="through-composed">Through-Composed</option>
                   <option value="transition">Transition</option>

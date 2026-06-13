@@ -24,7 +24,14 @@ const chordInput = document.querySelector("#chordInput");
 const simpleInstrumentBlendInput = document.querySelector("#simpleInstrumentBlendInput");
 const simplePercussionInput = document.querySelector("#simplePercussionInput");
 const simpleFightingDramaInput = document.querySelector("#simpleFightingDramaInput");
+const simplePresetInput = document.querySelector("#simplePresetInput");
+const simpleMoodInput = document.querySelector("#simpleMoodInput");
+const simpleStyleInput = document.querySelector("#simpleStyleInput");
+const simpleEnergyInput = document.querySelector("#simpleEnergyInput");
+const simpleSoundInput = document.querySelector("#simpleSoundInput");
 const simpleMusicTypeInput = document.querySelector("#simpleMusicTypeInput");
+const complexPresetInput = document.querySelector("#complexPresetInput");
+const rootInput = document.querySelector("#rootInput");
 const musicModeInput = document.querySelector("#musicModeInput");
 const neighborhoodInput = document.querySelector("#neighborhoodInput");
 const tacticalAccentsInput = document.querySelector("#tacticalAccentsInput");
@@ -126,6 +133,210 @@ const moodProfiles = {
   cinematic: { label: "Cinematic", pace: 1.18, duration: 1.22, overlap: 1.38, attack: 1.28, release: 1.42, brightness: 0.92, volume: 1.03 },
   melancholy: { label: "Melancholy", pace: 1.2, duration: 1.2, overlap: 1.22, attack: 1.22, release: 1.28, brightness: 0.82, volume: 0.88 },
   sad: { label: "Sad", pace: 1.28, duration: 1.14, overlap: 1.16, attack: 1.28, release: 1.24, brightness: 0.76, volume: 0.82 },
+};
+const simplePresetProfiles = {
+  "elegant-review": {
+    mood: "elegant",
+    style: "traditional",
+    energy: "balanced",
+    sound: "auto",
+    pace: "0.50",
+    volume: "0.75",
+    noteLength: "1.35",
+    blend: true,
+    percussion: true,
+    drama: false,
+    phrase: true,
+  },
+  "quiet-study": {
+    mood: "calm",
+    style: "minimal",
+    energy: "smooth",
+    sound: "piano-solo",
+    pace: "0.68",
+    volume: "0.62",
+    noteLength: "1.35",
+    blend: false,
+    percussion: false,
+    drama: false,
+    phrase: true,
+  },
+  "battle-drama": {
+    mood: "dramatic",
+    style: "cinematic",
+    energy: "dramatic",
+    sound: "chamber",
+    pace: "0.46",
+    volume: "0.82",
+    noteLength: "1.00",
+    blend: true,
+    percussion: true,
+    drama: true,
+    phrase: true,
+  },
+  "ancient-board": {
+    mood: "mysterious",
+    style: "traditional",
+    energy: "reactive",
+    sound: "cello-harp",
+    pace: "0.58",
+    volume: "0.72",
+    noteLength: "1.35",
+    blend: true,
+    percussion: true,
+    drama: false,
+    phrase: true,
+  },
+  "piano-minimal": {
+    mood: "calm",
+    style: "minimal",
+    energy: "smooth",
+    sound: "piano-solo",
+    pace: "0.60",
+    volume: "0.68",
+    noteLength: "1.35",
+    blend: false,
+    percussion: false,
+    drama: false,
+    phrase: true,
+  },
+  "cinematic-game": {
+    mood: "elegant",
+    style: "cinematic",
+    energy: "reactive",
+    sound: "piano-cello",
+    pace: "0.54",
+    volume: "0.78",
+    noteLength: "1.35",
+    blend: true,
+    percussion: true,
+    drama: true,
+    phrase: true,
+  },
+};
+const simpleSoundPairs = {
+  auto: { B: "cello", W: "harp", label: "cello / harp" },
+  "piano-solo": { B: "piano", W: "piano", label: "solo piano" },
+  "cello-harp": { B: "cello", W: "harp", label: "cello / harp" },
+  "piano-cello": { B: "piano", W: "cello", label: "piano / cello" },
+  "harp-guitar": { B: "harp", W: "guitar", label: "harp / guitar" },
+  chamber: { B: "cello", W: "piano", label: "small ensemble" },
+};
+const complexPresetProfiles = {
+  "chamber-trio": {
+    instrument: "harp",
+    root: "G",
+    scale: "korean-pentatonic",
+    chord: "triad",
+    musicMode: "goto-music-move37",
+    register: "middle",
+    noteLength: "1.35",
+    pace: "0.82",
+    legato: true,
+    drone: false,
+    connection: "voice-leading",
+    texture: "blend",
+    structure: "organic-unity",
+    tacticalMode: "subtle",
+    tacticalIntensity: "0.9",
+    barLength: "4",
+    phraseBars: "2",
+  },
+  "solo-cello-modal": {
+    instrument: "cello",
+    root: "D",
+    scale: "dorian",
+    chord: "none",
+    musicMode: "balanced",
+    register: "middle",
+    noteLength: "1.35",
+    pace: "0.92",
+    legato: true,
+    drone: false,
+    connection: "legato",
+    texture: "blend",
+    structure: "through-composed",
+    tacticalMode: "subtle",
+    tacticalIntensity: "0.65",
+    barLength: "4",
+    phraseBars: "3",
+  },
+  "piano-drone": {
+    instrument: "piano",
+    root: "A",
+    scale: "minor",
+    chord: "sus2",
+    musicMode: "balanced",
+    register: "middle",
+    noteLength: "1.35",
+    pace: "0.88",
+    legato: true,
+    drone: true,
+    connection: "dovetail",
+    texture: "homophony",
+    structure: "organic-unity",
+    tacticalMode: "subtle",
+    tacticalIntensity: "0.75",
+    barLength: "4",
+    phraseBars: "2",
+  },
+  "harp-pentatonic": {
+    instrument: "harp",
+    root: "D",
+    scale: "chinese-pentatonic",
+    chord: "sus4",
+    musicMode: "pentatonic",
+    register: "full",
+    noteLength: "1",
+    pace: "0.72",
+    legato: false,
+    drone: false,
+    connection: "voice-leading",
+    texture: "doubling",
+    structure: "transition",
+    tacticalMode: "subtle",
+    tacticalIntensity: "0.8",
+    barLength: "3",
+    phraseBars: "4",
+  },
+  "fight-study": {
+    instrument: "guitar",
+    root: "E",
+    scale: "minor",
+    chord: "seventh",
+    musicMode: "wide",
+    register: "middle",
+    noteLength: "0.65",
+    pace: "0.58",
+    legato: false,
+    drone: false,
+    connection: "voice-leading",
+    texture: "homophony",
+    structure: "transition",
+    tacticalMode: "dramatic",
+    tacticalIntensity: "1.35",
+    barLength: "5",
+    phraseBars: "2",
+  },
+  "ambient-endgame": {
+    instrument: "flute",
+    root: "C",
+    scale: "japanese-insen",
+    chord: "sus2",
+    musicMode: "hirajoshi-neighborhood",
+    register: "high",
+    noteLength: "1.35",
+    pace: "1.05",
+    legato: true,
+    drone: true,
+    connection: "dovetail",
+    texture: "blend",
+    structure: "through-composed",
+    tacticalMode: "off",
+    tacticalIntensity: "0.55",
+    barLength: "4",
+    phraseBars: "4",
+  },
 };
 const noteNames = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
 const displayNoteNames = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
@@ -469,6 +680,7 @@ function getCurrentSettings() {
   return {
     instrument,
     instruments: [instrument],
+    root: rootInput?.value || "auto",
     scale: scaleInput.value,
     chord: chordInput.value,
     musicMode: neighborhoodInput?.checked ? "hirajoshi-neighborhood" : musicModeInput.value,
@@ -520,16 +732,24 @@ function getTacticalSettings() {
       paceCarry: Math.max(0, numericValue(tacticalPaceCarryInput, 1)),
     };
   }
+  const simpleEnergy = simpleEnergyInput?.value || "balanced";
+  const energyProfiles = {
+    smooth: { intensity: 0.22, fightPace: 1.02, capturePace: 0.92, paceCarry: 0, mode: "subtle" },
+    balanced: { intensity: 0.38, fightPace: 1.1, capturePace: 0.88, paceCarry: 1, mode: "subtle" },
+    reactive: { intensity: 0.52, fightPace: 1.16, capturePace: 0.82, paceCarry: 1, mode: "subtle" },
+    dramatic: { intensity: 0.72, fightPace: 1.24, capturePace: 0.76, paceCarry: 2, mode: "dramatic" },
+  };
+  const energy = energyProfiles[simpleEnergy] || energyProfiles.balanced;
   return {
-    mode: tacticalAccentsInput?.checked ? "subtle" : "off",
-    intensity: 0.42,
+    mode: tacticalAccentsInput?.checked ? energy.mode : "off",
+    intensity: energy.intensity,
     fightInterval: 2,
     atariInterval: 1,
     captureInterval: 3,
     koInterval: 1,
-    fightPace: 1.14,
-    capturePace: 0.86,
-    paceCarry: 1,
+    fightPace: energy.fightPace,
+    capturePace: energy.capturePace,
+    paceCarry: energy.paceCarry,
   };
 }
 
@@ -544,7 +764,7 @@ function getComposition(game, settings = getCurrentSettings()) {
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     all: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   };
-  const root =
+  const autoRoot =
     settings.musicMode === "hirajoshi-neighborhood"
       ? 38
       : settings.scale === "chinese-pentatonic"
@@ -552,6 +772,8 @@ function getComposition(game, settings = getCurrentSettings()) {
         : settings.musicMode === "goto-music-move37"
           ? noteLabelToMidi.G + 12 * 4
           : 36 + (game.seed % 12);
+  const selectedRoot = settings.root || rootInput?.value || "auto";
+  const root = selectedRoot !== "auto" && noteLabelToMidi[selectedRoot] !== undefined ? noteLabelToMidi[selectedRoot] + 12 * 4 : autoRoot;
   const scale = modeScales[settings.musicMode] || modeScales.balanced;
   return { root, scale };
 }
@@ -579,8 +801,37 @@ function getInstrument(settings = getCurrentSettings()) {
   return instrumentSamples[instrumentName] || instrumentSamples.piano;
 }
 
+function getSimpleChoices() {
+  return {
+    preset: simplePresetInput?.value || "elegant-review",
+    mood: simpleMoodInput?.value || "elegant",
+    style: simpleStyleInput?.value || "traditional",
+    energy: simpleEnergyInput?.value || "balanced",
+    sound: simpleSoundInput?.value || "auto",
+  };
+}
+
+function getSimpleSoundPair() {
+  const choices = getSimpleChoices();
+  if (choices.sound !== "auto") return simpleSoundPairs[choices.sound] || simpleSoundPairs.auto;
+  const pairByStyle = {
+    minimal: simpleSoundPairs["piano-solo"],
+    solo: simpleSoundPairs["piano-solo"],
+    cinematic: simpleSoundPairs["piano-cello"],
+    chamber: simpleSoundPairs.chamber,
+    traditional: choices.mood === "mysterious" ? simpleSoundPairs["cello-harp"] : simpleSoundPairs.auto,
+  };
+  return pairByStyle[choices.style] || simpleSoundPairs.auto;
+}
+
+function getSimpleInstrumentForMove(move) {
+  const pair = getSimpleSoundPair();
+  return move.color === "B" ? pair.B : pair.W;
+}
+
 function getSimpleInstrumentLabel() {
   if (regionRows.length) return "complex";
+  if (simpleSoundInput) return getSimpleSoundPair().label;
   if (blackInstrumentInput || whiteInstrumentInput) {
     const black = blackInstrumentInput?.selectedOptions?.[0]?.textContent || "Piano";
     const white = whiteInstrumentInput?.selectedOptions?.[0]?.textContent || "Guitar";
@@ -594,14 +845,29 @@ function isSimplePage() {
 }
 
 function getSimpleMusicTypeSettings() {
-  const type = simpleMusicTypeInput?.value || "korean";
-  const variants = {
-    western: { type, scale: "major", musicMode: "balanced", register: "middle", maxStep: 3 },
-    korean: { type, scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "full", maxStep: 2 },
-    chinese: { type, scale: "chinese-pentatonic", musicMode: "goto-music-move37", register: "middle", maxStep: 2 },
-    japanese: { type, scale: "japanese-hirajoshi", musicMode: "hirajoshi-neighborhood", register: "middle", maxStep: 2 },
+  const choices = getSimpleChoices();
+  const style = choices.style || simpleMusicTypeInput?.value || "traditional";
+  const styleSettings = {
+    cinematic: { type: "cinematic", scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "middle", maxStep: 2 },
+    traditional: { type: "traditional", scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "full", maxStep: 2 },
+    minimal: { type: "minimal", scale: "japanese-hirajoshi", musicMode: "hirajoshi-neighborhood", register: "middle", maxStep: 1 },
+    chamber: { type: "chamber", scale: "chinese-pentatonic", musicMode: "pentatonic", register: "middle", maxStep: 2 },
+    solo: { type: "solo", scale: "dorian", musicMode: "balanced", register: "middle", maxStep: 2 },
+    western: { type: "western", scale: "major", musicMode: "balanced", register: "middle", maxStep: 3 },
+    korean: { type: "traditional", scale: "korean-pentatonic", musicMode: "goto-music-move37", register: "full", maxStep: 2 },
+    chinese: { type: "chamber", scale: "chinese-pentatonic", musicMode: "goto-music-move37", register: "middle", maxStep: 2 },
+    japanese: { type: "minimal", scale: "japanese-hirajoshi", musicMode: "hirajoshi-neighborhood", register: "middle", maxStep: 2 },
   };
-  return variants[type] || variants.korean;
+  const moodSettings = {
+    calm: { scale: "japanese-hirajoshi", musicMode: "hirajoshi-neighborhood", register: "middle", maxStep: 1 },
+    elegant: {},
+    mysterious: { scale: "japanese-insen", musicMode: "hirajoshi-neighborhood", register: "middle", maxStep: 2 },
+    dramatic: { scale: "minor", musicMode: "wide", register: "middle", maxStep: 2 },
+    joyful: { scale: "major", musicMode: "pentatonic", register: "middle", maxStep: 3 },
+    tense: { scale: "dorian", musicMode: "wide", register: "middle", maxStep: 2 },
+  };
+  const base = styleSettings[style] || styleSettings.traditional;
+  return { ...base, ...(moodSettings[choices.mood] || {}) };
 }
 
 function getExpressiveSimpleSettings(settings, tactics, phrase) {
@@ -610,7 +876,7 @@ function getExpressiveSimpleSettings(settings, tactics, phrase) {
   const tense = tactics.koLike || tactics.fight || tactics.opponentAtari || tactics.ownAtari;
   const release = tactics.captures > 0;
   const phase = phrase.phase || "middle";
-  const expressive = {
+  const expressiveProfiles = {
     western: {
       opening: { scale: "major", musicMode: "balanced", register: "middle" },
       middle: { scale: "mixolydian", musicMode: "balanced", register: "middle" },
@@ -639,7 +905,15 @@ function getExpressiveSimpleSettings(settings, tactics, phrase) {
       tense: { scale: "japanese-insen", musicMode: "hirajoshi-neighborhood", register: "middle" },
       release: { scale: "chinese-pentatonic", musicMode: "pentatonic", register: "middle" },
     },
-  }[variant.type];
+  };
+  const expressiveType = {
+    cinematic: "korean",
+    traditional: "korean",
+    minimal: "japanese",
+    chamber: "chinese",
+    solo: "western",
+  }[variant.type] || variant.type;
+  const expressive = expressiveProfiles[expressiveType] || expressiveProfiles.korean;
   const mood = release ? expressive.release : tense ? expressive.tense : expressive[phase] || expressive.middle;
   return { ...settings, ...mood };
 }
@@ -723,14 +997,14 @@ function noteForGotoMusicMove(game, move, settings = getCurrentSettings(), conte
   const positionStep = getMusicalIntelligenceSettings().positionColor ? context.positionStep || 0 : 0;
   const crescendoSteps = Math.floor(neighborhood.density * 5) + Math.floor(Math.max(0, neighborhood.occupiedNeighbors - 2) / 4) + positionStep;
   const index = Math.max(1, Math.min(gotoMusicScale.length, neighborhood.index + crescendoSteps));
-  if (settings.scale === "korean-pentatonic") return gotoMusicScale[index - 1];
+  const selectedRoot = settings.root || rootInput?.value || "auto";
+  if (settings.scale === "korean-pentatonic" && selectedRoot === "auto") return gotoMusicScale[index - 1];
 
   const scale = scaleModes[settings.scale] || scaleModes.major;
-  const base = noteLabelToMidi.G + 12 * 4;
+  const base = getComposition(game, settings).root;
   const degree = index - 1;
   const octaveOffset = Math.floor(degree / scale.length) * 12;
-  const rootOffset = settings.scale === "chinese-pentatonic" ? noteLabelToMidi.D - noteLabelToMidi.G : 0;
-  const midi = base + rootOffset + scale[degree % scale.length] + octaveOffset;
+  const midi = base + scale[degree % scale.length] + octaveOffset;
   return { index, label: midiToDisplayName(midi), midi };
 }
 
@@ -851,15 +1125,17 @@ function getSimplePercussionNotes(tactics, phrase) {
   const notes = [];
   const tacticalOn = getTacticalSettings().mode !== "off";
   if (!tacticalOn) return [];
+  const energy = simpleEnergyInput?.value || "balanced";
+  if (energy === "smooth" && tactics.captures === 0 && !phrase.phraseCadence) return [];
   const phraseOn = getMusicalIntelligenceSettings().phraseShaping;
 
   if (tactics.captures > 0) {
-    notes.push(makePercussionNote("bass drum", 0.006, 0.3, 0.34));
-    if (tactics.captures > 1) notes.push(makePercussionNote("tambourine", 0.09, 0.22, 0.18));
+    notes.push(makePercussionNote(energy === "smooth" ? "suspended cymbal" : "bass drum", 0.006, energy === "smooth" ? 0.5 : 0.3, energy === "dramatic" ? 0.42 : 0.3));
+    if (energy !== "smooth" && tactics.captures > 1) notes.push(makePercussionNote("tambourine", 0.09, 0.22, 0.18));
   } else if (tactics.koLike) {
     notes.push(makePercussionNote("triangle", 0.12, 0.52, 0.22));
   } else if (tactics.fight || tactics.opponentAtari || tactics.ownAtari) {
-    notes.push(makePercussionNote(tactics.ownAtari ? "cowbell" : "djembe", 0.04, 0.28, 0.24));
+    notes.push(makePercussionNote(energy === "dramatic" ? "djembe" : "woodblock", 0.04, 0.28, energy === "dramatic" ? 0.28 : 0.18));
   }
 
   if (phraseOn && phrase.phraseCadence) {
@@ -1419,10 +1695,11 @@ function getRegionName(move, size) {
 function getRegionSettings(move, game) {
   if (!regionRows.length && (blackInstrumentInput || whiteInstrumentInput)) {
     const variant = getSimpleMusicTypeSettings();
-    const instrument = move.color === "B" ? blackInstrumentInput?.value || "piano" : whiteInstrumentInput?.value || "guitar";
+    const instrument = simpleSoundInput ? getSimpleInstrumentForMove(move) : move.color === "B" ? blackInstrumentInput?.value || "piano" : whiteInstrumentInput?.value || "guitar";
     return {
       instrument,
       instruments: [instrument],
+      root: "auto",
       scale: variant.scale,
       chord: chordInput.value,
       musicMode: variant.musicMode,
@@ -1913,6 +2190,67 @@ function getMimeType() {
   return preferred.find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
+function setControlValue(control, value) {
+  if (!control || value === undefined) return;
+  control.value = value;
+}
+
+function setControlChecked(control, checked) {
+  if (!control || checked === undefined) return;
+  control.checked = Boolean(checked);
+}
+
+function syncSimpleHiddenControls() {
+  if (!isSimplePage()) return;
+  const variant = getSimpleMusicTypeSettings();
+  const pair = getSimpleSoundPair();
+  setControlValue(blackInstrumentInput, pair.B);
+  setControlValue(whiteInstrumentInput, pair.W);
+  setControlValue(instrumentInput, pair.B);
+  setControlValue(scaleInput, variant.scale);
+  setControlValue(musicModeInput, variant.musicMode);
+  setControlValue(registerInput, variant.register);
+}
+
+function applySimplePreset() {
+  if (!simplePresetInput) return;
+  const preset = simplePresetProfiles[simplePresetInput.value] || simplePresetProfiles["elegant-review"];
+  setControlValue(simpleMoodInput, preset.mood);
+  setControlValue(simpleStyleInput, preset.style);
+  setControlValue(simpleEnergyInput, preset.energy);
+  setControlValue(simpleSoundInput, preset.sound);
+  setControlValue(paceInput, preset.pace);
+  setControlValue(volumeInput, preset.volume);
+  setControlValue(noteLengthInput, preset.noteLength);
+  setControlChecked(simpleInstrumentBlendInput, preset.blend);
+  setControlChecked(simplePercussionInput, preset.percussion);
+  setControlChecked(simpleFightingDramaInput, preset.drama);
+  setControlChecked(phraseShapingInput, preset.phrase);
+  syncSimpleHiddenControls();
+}
+
+function applyComplexPreset() {
+  if (!complexPresetInput) return;
+  const preset = complexPresetProfiles[complexPresetInput.value] || complexPresetProfiles["chamber-trio"];
+  setControlValue(instrumentInput, preset.instrument);
+  setControlValue(rootInput, preset.root);
+  setControlValue(scaleInput, preset.scale);
+  setControlValue(chordInput, preset.chord);
+  setControlValue(musicModeInput, preset.musicMode);
+  setControlValue(registerInput, preset.register);
+  setControlValue(noteLengthInput, preset.noteLength);
+  setControlValue(paceInput, preset.pace);
+  setControlChecked(legatoInput, preset.legato);
+  setControlChecked(droneInput, preset.drone);
+  setControlValue(connectionInput, preset.connection);
+  setControlValue(textureStyleInput, preset.texture);
+  setControlValue(structureInput, preset.structure);
+  setControlValue(tacticalAccentModeInput, preset.tacticalMode);
+  setControlValue(tacticalIntensityInput, preset.tacticalIntensity);
+  setControlValue(barLengthInput, preset.barLength);
+  setControlValue(phraseBarsInput, preset.phraseBars);
+}
+
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
@@ -2008,6 +2346,11 @@ addRangeButton?.addEventListener("click", () => {
 addSustainButton?.addEventListener("click", () => {
   addSustainRow();
 });
+simplePresetInput?.addEventListener("change", applySimplePreset);
+[simpleMoodInput, simpleStyleInput, simpleEnergyInput, simpleSoundInput].forEach((input) => {
+  input?.addEventListener("change", syncSimpleHiddenControls);
+});
+complexPresetInput?.addEventListener("change", applyComplexPreset);
 
 settingsGroups.forEach((group) => {
   group.addEventListener("toggle", () => {
@@ -2018,4 +2361,6 @@ settingsGroups.forEach((group) => {
   });
 });
 
+applySimplePreset();
+applyComplexPreset();
 drawBoard(createBoard(19), null, 1);

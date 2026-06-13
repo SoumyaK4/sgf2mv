@@ -71,7 +71,7 @@
           <details class="settings-group" open>
             <summary>Playback</summary>
             <label class="field">
-              <span>Move pace</span>
+              <span>Speed</span>
               <input id="paceInput" type="range" min="0.35" max="1.4" step="0.05" value="0.50" />
             </label>
 
@@ -82,7 +82,7 @@
 
             <label class="field field-inline">
               <input id="legatoInput" type="checkbox" checked/>
-              <span>Smooth Notes</span>
+              <span>Smooth connections</span>
             </label>
 
             <input id="droneInput" type="hidden" value="" />
@@ -90,42 +90,83 @@
           </details>
 
           <details class="settings-group">
-            <summary>Music</summary>
+            <summary>Music Feel</summary>
             <div class="field-grid">
               <label class="field">
-                <span>Black</span>
-                <select id="blackInstrumentInput">
-                  <option value="cello">Cello</option>
-                  <option value="piano">Piano</option>
-                  <option value="guitar">Guitar</option>
-                  <option value="harp">Harp</option>
+                <span>Starting point</span>
+                <select id="simplePresetInput">
+                  <option value="elegant-review" selected>Elegant review</option>
+                  <option value="quiet-study">Quiet study</option>
+                  <option value="battle-drama">Battle drama</option>
+                  <option value="ancient-board">Ancient board</option>
+                  <option value="piano-minimal">Piano minimal</option>
+                  <option value="cinematic-game">Cinematic game</option>
                 </select>
               </label>
 
               <label class="field">
-                <span>White</span>
-                <select id="whiteInstrumentInput">
-                  <option value="cello">Cello</option>
-                  <option value="piano">Piano</option>
-                  <option value="guitar">Guitar</option>
-                  <option value="harp">Harp</option>
+                <span>Mood</span>
+                <select id="simpleMoodInput">
+                  <option value="elegant" selected>Elegant</option>
+                  <option value="calm">Calm</option>
+                  <option value="mysterious">Mysterious</option>
+                  <option value="dramatic">Dramatic</option>
+                  <option value="joyful">Joyful</option>
+                  <option value="tense">Tense</option>
                 </select>
               </label>
-
-              <input id="instrumentInput" type="hidden" value="piano" />
             </div>
 
             <div class="field-grid">
               <label class="field">
-                <span>Music type</span>
-                <select id="simpleMusicTypeInput">
-                  <option value="western">Variant 1 - Western</option>
-                  <option value="korean" selected>Variant 2 - Korean</option>
-                  <option value="chinese">Variant 3 - Chinese</option>
-                  <option value="japanese">Variant 4 - Japanese</option>
+                <span>Sound</span>
+                <select id="simpleSoundInput">
+                  <option value="auto" selected>Let app choose</option>
+                  <option value="piano-solo">Solo piano</option>
+                  <option value="cello-harp">Cello and harp</option>
+                  <option value="piano-cello">Piano and cello</option>
+                  <option value="harp-guitar">Harp and guitar</option>
+                  <option value="chamber">Small ensemble</option>
                 </select>
               </label>
 
+              <label class="field">
+                <span>Game energy</span>
+                <select id="simpleEnergyInput">
+                  <option value="balanced" selected>Balanced</option>
+                  <option value="smooth">Smooth</option>
+                  <option value="reactive">Reactive</option>
+                  <option value="dramatic">Very dramatic</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="field-grid">
+              <label class="field">
+                <span>Style</span>
+                <select id="simpleStyleInput">
+                  <option value="cinematic">Gentle cinematic</option>
+                  <option value="traditional" selected>Traditional East Asian</option>
+                  <option value="minimal">Minimal piano</option>
+                  <option value="chamber">Chamber music</option>
+                  <option value="solo">Solo instrument</option>
+                </select>
+              </label>
+
+              <select id="blackInstrumentInput" hidden>
+                <option value="cello" selected>Cello</option>
+                <option value="piano">Piano</option>
+                <option value="guitar">Guitar</option>
+                <option value="harp">Harp</option>
+              </select>
+              <select id="whiteInstrumentInput" hidden>
+                <option value="harp" selected>Harp</option>
+                <option value="cello">Cello</option>
+                <option value="piano">Piano</option>
+                <option value="guitar">Guitar</option>
+              </select>
+              <input id="instrumentInput" type="hidden" value="piano" />
+              <input id="simpleMusicTypeInput" type="hidden" value="korean" />
               <input id="scaleInput" type="hidden" value="korean-pentatonic" />
               <input id="chordInput" type="hidden" value="none" />
               <input id="musicModeInput" type="hidden" value="goto-music-move37" />
@@ -135,27 +176,27 @@
 
             <label class="field field-inline">
               <input id="simpleInstrumentBlendInput" type="checkbox" checked />
-              <span>Use Instrument Blend</span>
+              <span>Add gentle harmony</span>
             </label>
 
             <label class="field field-inline">
               <input id="tacticalAccentsInput" type="checkbox" checked />
-              <span>Fighting Sounds</span>
+              <span>React to fights</span>
             </label>
 
             <label class="field field-inline">
               <input id="simpleFightingDramaInput" type="checkbox" />
-              <span>Fighting Drama</span>
+              <span>Stretch tense moments</span>
             </label>
 
             <label class="field field-inline">
               <input id="simplePercussionInput" type="checkbox" checked />
-              <span>Fighting Percussion</span>
+              <span>Soft percussion</span>
             </label>
             
             <label class="field field-inline">
               <input id="phraseShapingInput" type="checkbox" checked />
-              <span>Game Phase</span>
+              <span>Shape opening and endgame</span>
             </label>
           </details>
 
