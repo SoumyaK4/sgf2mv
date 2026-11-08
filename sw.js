@@ -1,5 +1,6 @@
 const CACHE_PREFIX = "sgf-to-music-";
-const CACHE_NAME = `${CACHE_PREFIX}v11`;
+const CACHE_NAME = `${CACHE_PREFIX}v25`;
+const KATAGO_RUNTIME_CACHE = "sgf2mv-katago-runtime-v1";
 const APP_SHELL = [
   "./",
   "index.html",
@@ -7,11 +8,19 @@ const APP_SHELL = [
   "complex.html",
   "SGF-Postcards.html",
   "src/app.js",
+  "src/game.js",
+  "src/studio.js",
+  "src/preferences.js",
+  "src/simple-music.js",
+  "src/analysis.js",
+  "src/katago.js",
+  "src/sha256.js",
   "src/visuals.js",
   "src/pwa.js",
   "src/styles.css",
   "manifest.webmanifest",
   "sitemap.xml",
+  "robots.txt",
   "assets/site/logo.webp",
   "assets/site/favicons/favicon.ico",
   "assets/site/favicons/favicon-16x16.png",
@@ -68,6 +77,20 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   if (new URL(event.request.url).origin !== self.location.origin) return;
+
+  const url = new URL(event.request.url);
+  if (url.pathname.includes("/assets/katago/")) {
+    // Model downloads have their own verified cache and progress reader in the client.
+    if (url.pathname.endsWith(".bin.gz")) return;
+    event.respondWith(caches.open(KATAGO_RUNTIME_CACHE).then(async (cache) => {
+      const cached = await cache.match(event.request);
+      if (cached) return cached;
+      const response = await fetch(event.request);
+      if (response.ok) await cache.put(event.request, response.clone()).catch(() => {});
+      return response;
+    }));
+    return;
+  }
 
   if (isAppFile(event.request)) {
     event.respondWith(cacheFresh(event.request).catch(() => caches.match(event.request)));

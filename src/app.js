@@ -1,3 +1,9 @@
+import { createAnalysis } from "./analysis.js";
+import { KataGoClient, engineRules } from "./katago.js";
+import { createStudio } from "./studio.js";
+import { createPreferences } from "./preferences.js";
+import { createSimpleRhythm, shapeSimpleTiming } from "./simple-music.js";
+import { parseSgf, createBoard, applySetup, applyMove, neighbors, collectGroup, boardHash, createReplay, readSgfFile, createEnginePosition } from "./game.js";
 import { createVisualControls, drawVisualBoard } from "./visuals.js";
 
 const visualSettings = createVisualControls(document.querySelector("#visualControls"), () => redrawCurrentBoard());
@@ -60,7 +66,6 @@ const metaEl = document.querySelector("#gameMeta");
 const downloadLink = document.querySelector("#downloadLink");
 const canvas = document.querySelector("#boardCanvas");
 const ctx = canvas.getContext("2d");
-const settingsGroups = [...document.querySelectorAll(".settings-group")];
 const hirajoshiPitchClasses = [2, 3, 7, 9, 10];
 const noteLabelToMidi = {
   C: 0,
@@ -109,8 +114,31 @@ let activeAudio = null;
 let activeRecorder = null;
 let downloadUrl = null;
 let fileLoadId = 0;
+let replay = null;
+let sourceName = "sgf-to-music";
+let isBusy = false;
+let recordingControls = null;
+let analysis = null;
+let analysisAbort = null;
+let analysisBusy = false;
+const engine = new KataGoClient();
+const studio = createStudio({
+  onText: loadText,
+  onFile: loadFile,
+  onSeek: seekPreview,
+  onMetadata: (key) => {
+    if (!key || key === "komi" || key === "rules") {
+      analysis?.clear();
+      if (engine.ready) engineProgress("KataGo ready. Game parameters changed; analyze again to update estimates.", 1);
+    }
+    updateMetadata(); redrawCurrentBoard();
+  },
+  onAnalysisChange: () => { updateEngineControls(); redrawCurrentBoard(); },
+  onLoadEngine: loadEngine,
+  onAnalyze: (bulk) => analyzePreview(bulk),
+  onCancelAnalysis: cancelAnalysis,
+});
 
-const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const scaleModes = {
   "korean-pentatonic": [7, 9, 10, 2, 3],
   "chinese-pentatonic": [0, 2, 4, 7, 9],
@@ -419,246 +447,6 @@ function loadImage(src) {
   return image;
 }
 
-function hashText(text) {
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function parseSgf(text) {
-  let position = 0;
-  let gameCount = 0;
-  const stack = [];
-  const nodes = [];
-  const invalid = () => new Error("Invalid SGF: check the game tree and property values.");
-  const skipWhitespace = () => {
-    while (position < text.length && /\s/.test(text[position])) position += 1;
-  };
-  const readValue = () => {
-    position += 1;
-    let value = "";
-    while (position < text.length) {
-      const character = text[position++];
-      if (character === "]") return value;
-      if (character !== "\\") {
-        value += character;
-        continue;
-      }
-      if (position >= text.length) throw invalid();
-      const escaped = text[position++];
-      if (escaped === "\r" || escaped === "\n") {
-        const next = text[position];
-        if ((escaped === "\r" && next === "\n") || (escaped === "\n" && next === "\r")) position += 1;
-      } else {
-        value += escaped;
-      }
-    }
-    throw invalid();
-  };
-
-  // Walk the collection without recursion, keeping only the first game's main line.
-  while (position < text.length) {
-    skipWhitespace();
-    if (position === text.length) break;
-    const character = text[position];
-    const parent = stack.at(-1);
-    if (character === "(") {
-      if (parent && !parent.hasNode) throw invalid();
-      const selected = parent ? parent.selected && parent.children === 0 : gameCount === 0;
-      if (parent) parent.children += 1;
-      else gameCount += 1;
-      stack.push({ selected, children: 0, hasNode: false });
-      position += 1;
-    } else if (character === ")") {
-      if (!parent?.hasNode) throw invalid();
-      stack.pop();
-      position += 1;
-    } else if (character === ";") {
-      if (!parent || parent.children) throw invalid();
-      position += 1;
-      parent.hasNode = true;
-      const properties = new Map();
-      skipWhitespace();
-      while (position < text.length && !";()".includes(text[position])) {
-        const identifier = text.slice(position).match(/^[A-Z]+/)?.[0];
-        if (!identifier || properties.has(identifier)) throw invalid();
-        position += identifier.length;
-        skipWhitespace();
-        const values = [];
-        while (text[position] === "[") {
-          values.push(readValue());
-          skipWhitespace();
-        }
-        if (!values.length) throw invalid();
-        properties.set(identifier, values);
-      }
-      if (parent.selected) nodes.push(properties);
-    } else {
-      throw invalid();
-    }
-  }
-  if (stack.length || !nodes.length) throw invalid();
-
-  const root = nodes[0];
-  const sizeValue = root.get("SZ")?.[0] ?? "19";
-  const size = Number(sizeValue);
-  if (!/^\d+$/.test(sizeValue) || !Number.isInteger(size) || size < 2 || size > 52) {
-    throw new Error("Supported SGF board sizes are square boards from 2 to 52.");
-  }
-  if (root.has("GM") && root.get("GM")[0] !== "1") throw new Error("Please choose a Go/Baduk/Weiqi SGF file.");
-  const point = (value) => {
-    const x = value.length === 2 ? letters.indexOf(value[0]) : -1;
-    const y = value.length === 2 ? letters.indexOf(value[1]) : -1;
-    if (x < 0 || y < 0 || x >= size || y >= size) throw new Error(`Invalid SGF point "${value}" for a ${size}x${size} board.`);
-    return { x, y };
-  };
-  const initialSetup = [];
-  const moves = [];
-  let pendingSetup = [];
-  for (const node of nodes) {
-    const color = node.has("B") ? "B" : node.has("W") ? "W" : null;
-    const hasSetup = ["AB", "AW", "AE"].some((property) => node.has(property));
-    if ((node.has("B") && node.has("W")) || (color && hasSetup)) throw invalid();
-    const setup = [];
-    const setupPoints = new Set();
-    for (const property of ["AB", "AW", "AE"]) {
-      for (const value of node.get(property) || []) {
-        const ends = value.split(":");
-        if (ends.length > 2) throw invalid();
-        const start = point(ends[0]);
-        const end = point(ends.at(-1));
-        if (start.x > end.x || start.y > end.y) throw invalid();
-        for (let y = start.y; y <= end.y; y += 1) {
-          for (let x = start.x; x <= end.x; x += 1) {
-            const key = `${x},${y}`;
-            if (setupPoints.has(key)) throw new Error(`Conflicting SGF setup stones at "${letters[x]}${letters[y]}".`);
-            setupPoints.add(key);
-            setup.push({ x, y, color: property === "AE" ? null : property[1] });
-          }
-        }
-      }
-    }
-    if (moves.length) pendingSetup.push(...setup);
-    else initialSetup.push(...setup);
-    if (color) {
-      const values = node.get(color);
-      if (values.length !== 1) throw invalid();
-      const pass = values[0] === "" || (values[0] === "tt" && size <= 19);
-      moves.push({ color, pass, ...(pass ? { x: -1, y: -1 } : point(values[0])), setup: pendingSetup });
-      pendingSetup = [];
-    }
-  }
-  const metadata = (property, fallback = "") => {
-    const value = nodes.find((node) => node.has(property))?.get(property)[0];
-    return value?.replace(/\s/g, " ") || fallback;
-  };
-  return {
-    raw: text,
-    seed: hashText(text),
-    size,
-    komi: metadata("KM"),
-    black: metadata("PB", "Black"),
-    white: metadata("PW", "White"),
-    blackRank: metadata("BR"),
-    whiteRank: metadata("WR"),
-    date: metadata("DT"),
-    initialSetup,
-    finalSetup: pendingSetup,
-    moves,
-  };
-}
-
-function applySetup(board, setup = []) {
-  for (const { x, y, color } of setup) {
-    board[y][x] = color;
-    if (board.placed) board.placed[y][x] = 0;
-  }
-}
-
-function createBoard(size, setup = []) {
-  const board = Array.from({ length: size }, () => Array(size).fill(null));
-  board.placed = Array.from({ length: size }, () => Array(size).fill(0));
-  board.moveNumber = 0;
-  board.lastMove = null;
-  applySetup(board, setup);
-  return board;
-}
-
-function neighbors(x, y, size) {
-  return [
-    [x - 1, y],
-    [x + 1, y],
-    [x, y - 1],
-    [x, y + 1],
-  ].filter(([nx, ny]) => nx >= 0 && ny >= 0 && nx < size && ny < size);
-}
-
-function collectGroup(board, x, y) {
-  const color = board[y][x];
-  const stack = [[x, y]];
-  const seen = new Set();
-  const stones = [];
-  const liberties = new Set();
-
-  while (stack.length) {
-    const [cx, cy] = stack.pop();
-    const key = `${cx},${cy}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    stones.push([cx, cy]);
-
-    for (const [nx, ny] of neighbors(cx, cy, board.length)) {
-      if (!board[ny][nx]) liberties.add(`${nx},${ny}`);
-      if (board[ny][nx] === color) stack.push([nx, ny]);
-    }
-  }
-
-  return { stones, liberties: liberties.size };
-}
-
-function boardHash(board) {
-  return board.map((row) => row.map((stone) => stone || ".").join("")).join("/");
-}
-
-function applyMove(board, move) {
-  applySetup(board, move.setup);
-  board.moveNumber += 1;
-  board.lastMove = move;
-  if (move.pass || board[move.y]?.[move.x]) return { captures: 0, capturedStones: [], ownLiberties: 0, koLike: false };
-  board[move.y][move.x] = move.color;
-  board.placed[move.y][move.x] = board.moveNumber;
-  const opponent = move.color === "B" ? "W" : "B";
-  let captures = 0;
-  const capturedStones = [];
-
-  for (const [nx, ny] of neighbors(move.x, move.y, board.length)) {
-    if (board[ny][nx] !== opponent) continue;
-    const group = collectGroup(board, nx, ny);
-    if (group.liberties === 0) {
-      captures += group.stones.length;
-      group.stones.forEach(([sx, sy]) => {
-        capturedStones.push([sx, sy]);
-        board[sy][sx] = null;
-        board.placed[sy][sx] = 0;
-      });
-    }
-  }
-
-  const ownGroup = collectGroup(board, move.x, move.y);
-  const ownLiberties = ownGroup.liberties;
-  if (ownGroup.liberties === 0) {
-    ownGroup.stones.forEach(([sx, sy]) => {
-      board[sy][sx] = null;
-      board.placed[sy][sx] = 0;
-    });
-  }
-
-  return { captures, capturedStones, ownLiberties, koLike: captures === 1 && ownGroup.stones.length === 1 && ownLiberties === 1 };
-}
-
 function pickTexture(color, x, y, seed) {
   const textures = stoneTextures[color];
   const index = Math.abs(Math.imul(seed ^ (x + 37), y + 91)) % textures.length;
@@ -672,18 +460,24 @@ function formatPlayer(name, rank) {
 function getBoardTitle(game) {
   if (!game) return { black: "Black", white: "White", date: "" };
   return {
-    black: formatPlayer(game.black, game.blackRank),
-    white: formatPlayer(game.white, game.whiteRank),
+    black: formatPlayer(game.black || "Black", game.blackRank),
+    white: formatPlayer(game.white || "White", game.whiteRank),
     date: game.date,
   };
 }
 
 function drawBoard(board, activeMove = null, progress = 1, game = null, seed = 0, activeEntry = null) {
   currentFrame = { board, activeMove, progress, game, seed, activeEntry };
+  if (game === loadedGame && studio.position !== board.moveNumber) studio.setPosition(board.moveNumber);
+  const overlay = game && analysis ? analysis.view(board, analysisOptions()) : null;
+  const label = `Go board at move ${board.moveNumber || 0}${game ? ` of ${game.moves.length}` : ""}${overlay?.winrate !== null && overlay?.winrate !== undefined ? `. Black win rate ${overlay.winrate.toFixed(1)} percent` : ""}`;
+  if (canvas.getAttribute("aria-label") !== label) canvas.setAttribute("aria-label", label);
+  canvas.setAttribute("role", "img");
   drawVisualBoard({
     ctx, canvas, board, activeMove, progress, game, activeEntry,
     title: getBoardTitle(game),
     settings: visualSettings,
+    analysis: overlay,
     boardTexture,
     textureAt: (color, x, y) => pickTexture(color, x, y, seed),
   });
@@ -1596,8 +1390,12 @@ function addSustainRow({ start = "", end = "", every = 1, instrument = "cello" }
       <span>Every</span>
       <input class="sustain-every" type="number" min="1" step="1" value="${every}" />
     </label>
-    <button class="icon-button remove-sustain" type="button" aria-label="Remove sustain">x</button>
+    <div class="row-actions">
+      <button class="secondary-button duplicate-sustain" type="button" aria-label="Duplicate sustained layer">Duplicate</button>
+      <button class="secondary-button remove-sustain" type="button" aria-label="Remove sustained layer">Remove</button>
+    </div>
   `;
+  row.querySelector(".duplicate-sustain").addEventListener("click", () => duplicateMusicRow(row, addSustainRow));
   row.querySelector(".remove-sustain").addEventListener("click", () => row.remove());
   sustainList.append(row);
 }
@@ -1630,10 +1428,52 @@ function addRangeRow({ start = 1, end = "", pace = paceInput.value, mood = "neut
       <input class="range-legato" type="checkbox"${legato ? " checked" : ""} />
       <span>Legato here</span>
     </label>
-    <button class="icon-button remove-range" type="button" aria-label="Remove range">x</button>
+    <div class="row-actions">
+      <button class="secondary-button duplicate-range" type="button" aria-label="Duplicate move range">Duplicate</button>
+      <button class="secondary-button remove-range" type="button" aria-label="Remove move range">Remove</button>
+    </div>
   `;
+  row.querySelector(".duplicate-range").addEventListener("click", () => duplicateMusicRow(row, addRangeRow));
   row.querySelector(".remove-range").addEventListener("click", () => row.remove());
   rangeList.append(row);
+}
+
+function duplicateMusicRow(row, addRow) {
+  addRow();
+  const copy = row.parentElement.lastElementChild;
+  const originals = row.querySelectorAll("input, select");
+  copy.querySelectorAll("input, select").forEach((input, index) => {
+    if (input.type === "checkbox") input.checked = originals[index].checked;
+    else input.value = originals[index].value;
+  });
+  row.after(copy);
+}
+
+function validateComplexSettings(game) {
+  if (isSimplePage()) return;
+  const validateBounds = (row, prefix, label) => {
+    const first = row.querySelector(`.${prefix}-start`).value;
+    const last = row.querySelector(`.${prefix}-end`).value;
+    const start = first === "" ? 1 : Number(first), end = last === "" ? game.moves.length : Number(last);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end > game.moves.length || start > end) {
+      throw new Error(`${label}: choose move bounds between 1 and ${game.moves.length}, in order. Leave To blank for the rest of the game.`);
+    }
+  };
+  if (sectionPacingInput?.checked) {
+    [...rangeList.querySelectorAll(".range-row")].forEach((row, index) => {
+      const label = `Move range ${index + 1}`;
+      validateBounds(row, "range", label);
+      const pace = row.querySelector(".range-pace").value;
+      if (pace !== "" && (!Number.isFinite(Number(pace)) || Number(pace) < 0.25 || Number(pace) > 2.4)) throw new Error(`${label}: move pace must be between 0.25 and 2.4 seconds.`);
+    });
+  }
+  [...(sustainList?.querySelectorAll(".sustain-row") || [])].forEach((row, index) => {
+    const label = `Sustained layer ${index + 1}`;
+    validateBounds(row, "sustain", label);
+    const value = row.querySelector(".sustain-every").value;
+    const every = value === "" ? 1 : Number(value);
+    if (!Number.isInteger(every) || every < 1) throw new Error(`${label}: Every must be a positive whole number of moves.`);
+  });
 }
 
 function getRangeSettings(moveNumber) {
@@ -1782,27 +1622,6 @@ async function getSampleBuffer(audio, instrumentName, sampleName, signal) {
   return audio.decodeAudioData(sampleBytes.get(path).slice(0));
 }
 
-async function preloadSamples(audio, timeline, game) {
-  const sampleRefs = [
-    ...timeline.flatMap((entry) => entry.notes),
-    ...timeline
-      .filter((entry) => entry.settings.drone)
-      .map((entry) => ({ instrument: entry.settings.instrument, sampleName: getLowAnchorSampleName(game, entry.settings) })),
-    ...[...(sustainList?.querySelectorAll(".sustain-row") || [])].map((row) => {
-      const instrument = row.querySelector(".sustain-instrument").value;
-      return { instrument, sampleName: getSustainSampleName(game, instrument) };
-    }),
-  ];
-  const uniqueRefs = [...new Map(sampleRefs.map((ref) => [`${ref.instrument}/${ref.sampleName}`, ref])).values()];
-  const decoded = new Map();
-  await Promise.all(
-    uniqueRefs.map(async ({ instrument, sampleName }) => {
-      decoded.set(`${instrument}/${sampleName}`, await getSampleBuffer(audio, instrument, sampleName));
-    }),
-  );
-  return decoded;
-}
-
 async function ensureDecodedSample(decoded, audio, instrument, sampleName, signal) {
   signal?.throwIfAborted();
   const key = `${instrument}/${sampleName}`;
@@ -1830,6 +1649,7 @@ function buildMoveEntry(game, board, move, index, moveResult, tacticalState = { 
   const percussionInstruments = uniqueInstruments.filter((name) => percussionSamples[name]);
   const leadInstrument = melodicInstruments[0] || "piano";
   const tactics = analyzeMoveTactics(game, board, move, moveResult);
+  const evaluationLoss = isSimplePage() && game === loadedGame ? analysis?.moveImpact(index, moveResult.previousBoardHash, moveResult.boardHash) : null;
   const phrase = getPhraseProfile(game, index, tactics, tacticalState);
   const noteSettings = getExpressiveSimpleSettings({ ...settings, instrument: leadInstrument, board }, tactics, phrase);
   const rawMidi = noteForMove(game, move, index, captures, noteSettings, phrase);
@@ -1856,7 +1676,9 @@ function buildMoveEntry(game, board, move, index, moveResult, tacticalState = { 
     ];
   });
   const tacticalNotes = buildTacticalNotes(game, midi, tactics, noteSettings, melodicInstruments, tacticalState);
-  const displayLabel = describeMoveNotes([...melodicNotes.map((note) => note.midi), ...tacticalNotes.map((note) => note.midi)], midi);
+  const evaluationNotes = evaluationLoss?.strength >= 0.35 && getTacticalSettings().mode !== "off"
+    ? [{ ...makeMelodicNote(leadInstrument, scaleStepMidi(game, midi, noteSettings, -2), 0.08, 0.12 + evaluationLoss.strength * 0.12), kind: "evaluation", durationScale: 0.75 }] : [];
+  const displayLabel = describeMoveNotes([...melodicNotes.map((note) => note.midi), ...tacticalNotes.map((note) => note.midi), ...evaluationNotes.map(note => note.midi)], midi);
   const percussionNotes = percussionInstruments.map((instrument) => makePercussionNote(instrument, 0, 1, 1));
   const simplePercussionNotes = getSimplePercussionNotes(tactics, phrase);
   return {
@@ -1867,12 +1689,13 @@ function buildMoveEntry(game, board, move, index, moveResult, tacticalState = { 
     gotoMusic,
     displayLabel,
     tactics,
+    evaluationLoss,
     phrase,
     settings: noteSettings,
     rangeSettings,
     flow,
-    chordSize: Math.max(1, melodicNotes.length + blendNotes.length + percussionNotes.length + simplePercussionNotes.length),
-    notes: [...melodicNotes, ...blendNotes, ...tacticalNotes, ...percussionNotes, ...simplePercussionNotes],
+    chordSize: Math.max(1, melodicNotes.length + blendNotes.length + percussionNotes.length + simplePercussionNotes.length + evaluationNotes.length),
+    notes: [...melodicNotes, ...blendNotes, ...tacticalNotes, ...percussionNotes, ...simplePercussionNotes, ...evaluationNotes],
   };
 }
 
@@ -1925,7 +1748,7 @@ function createAudioOutput(audio, destination) {
   master.connect(compressor);
   compressor.connect(destination);
 
-  return { dry, reverbSend, delaySend };
+  return { dry, reverbSend, delaySend, master };
 }
 
 function playNote(audio, output, buffer, when, duration, color, captures, overlap = 0, chordSize = 1, profile = moodProfiles.neutral, articulation = {}) {
@@ -1963,6 +1786,8 @@ function playNote(audio, output, buffer, when, duration, color, captures, overla
   gain.connect(output.delaySend);
   source.start(when);
   source.stop(noteEnd + 0.06);
+  source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); };
+  return noteEnd + 0.06;
 }
 
 function startDrone(audio, output, buffer, profile) {
@@ -2010,235 +1835,251 @@ function wait(ms, signal) {
   });
 }
 
-async function playGame(game, { record = false } = {}) {
+function createCompositionState(game) {
+  const board = createBoard(game.size, game.initialSetup);
+  return { board, boardHashes: new Set([boardHash(board)]), tacticalState: { tension: 0, release: 0, continuity: 0 }, previousLeadMidi: null, tacticalPaceBoost: null, simpleTacticalExpressionCarry: null, simpleDramaPaceCarry: null, simpleRhythm: createSimpleRhythm() };
+}
+
+function advanceComposition(game, index, state, end = game.moves.length) {
+  const board = state.board;
+  const move = game.moves[index];
+  if (move.setup.length) state.boardHashes.clear();
+  const previousBoardHash = boardHash(board);
+  const result = applyMove(board, move);
+  result.previousBoardHash = previousBoardHash;
+  result.boardHash = boardHash(board);
+  result.repeatedPosition = !move.pass && state.boardHashes.has(result.boardHash);
+  state.boardHashes.add(result.boardHash);
+  const entry = buildMoveEntry(game, board, move, index, result, state.tacticalState, state.previousLeadMidi);
+  state.previousLeadMidi = entry.midi;
+  state.tacticalState = updateTacticalState(state.tacticalState, entry.tactics);
+  const rangeSettings = entry.rangeSettings;
+  const flow = entry.flow;
+  const profile = getMoodProfile(entry.settings.mood !== "neutral" ? entry.settings.mood : rangeSettings.mood);
+  const tacticalSettings = getTacticalSettings();
+  let tacticalExpression = neutralTacticalExpression();
+  let movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value)) * entry.phrase.pace;
+  if (isSimplePage()) {
+    const currentDramaPace = tacticalSettings.mode === "off" ? null : getSimpleDramaPace(entry.tactics);
+    if (currentDramaPace) {
+      state.simpleDramaPaceCarry = { multiplier: currentDramaPace, remaining: tacticalSettings.paceCarry };
+      movePace *= currentDramaPace;
+    } else if (state.simpleDramaPaceCarry?.remaining > 0 && tacticalSettings.mode !== "off" && simpleFightingDramaInput?.checked) {
+      movePace *= state.simpleDramaPaceCarry.multiplier;
+      state.simpleDramaPaceCarry.remaining -= 1;
+      if (state.simpleDramaPaceCarry.remaining <= 0) state.simpleDramaPaceCarry = null;
+    } else if (state.simpleDramaPaceCarry && (tacticalSettings.mode === "off" || !simpleFightingDramaInput?.checked)) {
+      state.simpleDramaPaceCarry = null;
+    }
+    if (state.simpleTacticalExpressionCarry?.remaining > 0) {
+      tacticalExpression = state.simpleTacticalExpressionCarry.expression;
+      state.simpleTacticalExpressionCarry.remaining -= 1;
+      if (state.simpleTacticalExpressionCarry.remaining <= 0) state.simpleTacticalExpressionCarry = null;
+    }
+    const currentExpression = tacticalSettings.mode === "off" ? null : getSimpleTacticalExpression(entry.tactics);
+    if (currentExpression) {
+      tacticalExpression = blendTacticalExpression(tacticalExpression, currentExpression);
+      state.simpleTacticalExpressionCarry = { expression: currentExpression, remaining: tacticalSettings.paceCarry };
+    }
+  } else if (state.tacticalPaceBoost?.remaining > 0) {
+    movePace *= state.tacticalPaceBoost.multiplier;
+    state.tacticalPaceBoost.remaining -= 1;
+    if (state.tacticalPaceBoost.remaining <= 0) state.tacticalPaceBoost = null;
+  }
+  if (!isSimplePage() && entry.tactics.captures > 0) {
+    const capturePace = tacticalSettings.capturePace;
+    state.tacticalPaceBoost = { multiplier: capturePace, remaining: tacticalSettings.paceCarry };
+    movePace *= capturePace;
+  } else if (!isSimplePage() && (entry.tactics.fight || entry.tactics.opponentAtari || entry.tactics.ownAtari)) {
+    const fightPace = tacticalSettings.fightPace;
+    state.tacticalPaceBoost = { multiplier: fightPace, remaining: tacticalSettings.paceCarry };
+    movePace *= fightPace;
+  }
+  const isLegato = flow.connection === "legato" || rangeSettings.legato || entry.settings.legato;
+  const connectionShape = {
+    legato: { duration: 1.08, overlap: 1.1, stagger: 0.018 },
+    dovetail: { duration: 1.16, overlap: 1.28, stagger: 0.04 },
+    "voice-leading": { duration: 1, overlap: 0.95, stagger: 0.014 },
+    glissando: { duration: 1.22, overlap: 1.42, stagger: 0.065 },
+    natural: { duration: 1, overlap: 0.78, stagger: 0.024 },
+  }[flow.connection] || { duration: 1, overlap: 1, stagger: 0.018 };
+  if (rangeSettings.legato || entry.settings.legato) {
+    connectionShape.duration *= 1.18;
+    connectionShape.overlap *= 1.36;
+    connectionShape.stagger *= 0.55;
+  }
+  const structureShape = {
+    "through-composed": { duration: 1, overlap: 1 },
+    transition: { duration: 1.06, overlap: 1.16 },
+    "organic-unity": { duration: 1.12, overlap: 1.24 },
+  }[flow.structure] || { duration: 1, overlap: 1 };
+  const isFinalMove = index === end - 1;
+  let pause = 0, noteDelayScale = 1;
+  if (isSimplePage()) {
+    const loss = tacticalSettings.mode === "off" ? null : entry.evaluationLoss;
+    if (loss?.strength) {
+      const energy = { smooth: 0.6, balanced: 0.8, reactive: 0.95, dramatic: 1 }[simpleEnergyInput.value] || 0.8;
+      const strength = loss.strength * energy;
+      tacticalExpression.brightness *= 1 - strength * 0.28;
+      tacticalExpression.overlap *= 1 - strength * 0.3;
+      tacticalExpression.intensity *= 1 - strength * 0.08;
+    }
+    const rhythm = shapeSimpleTiming({ target: Math.max(0.22, rangeSettings.pace || Number(paceInput.value)), requested: movePace, phrase: entry.phrase, notes: entry.notes, stagger: connectionShape.stagger, loss, pass: move.pass, legato: isLegato }, state.simpleRhythm);
+    movePace = rhythm.pace; pause = rhythm.pause; noteDelayScale = rhythm.delayScale;
+  }
+  const moveMs = (movePace + pause) * 1000;
+  const finalTail = isFinalMove ? 2.4 : 1;
+  let noteDuration = movePace * Number(noteLengthInput.value) * profile.duration * connectionShape.duration * structureShape.duration * entry.phrase.duration * tacticalExpression.duration * (isFinalMove ? 1.35 : 1);
+  let noteOverlap = Math.min(
+    movePace * 0.68 * profile.overlap * connectionShape.overlap * structureShape.overlap * entry.phrase.overlap * tacticalExpression.overlap * finalTail,
+    isFinalMove ? 3.2 : isLegato ? 1.65 : 1.15,
+  );
+  if (isSimplePage() && !isFinalMove) {
+    noteDuration = Math.min(noteDuration, movePace * (isLegato ? 1.45 : 1.05));
+    noteOverlap = Math.min(noteOverlap, movePace * (isLegato ? 0.4 : 0.18));
+  }
+  const sustainNotes = getActiveSustainRows(index + 1).filter((row) => shouldPlaySustain(row, index + 1)).map((row) => {
+    const instrument = row.querySelector(".sustain-instrument").value;
+    return { instrument, sampleName: getSustainSampleName(game, instrument) };
+  });
+  return { entry, move, result, profile, movePace, moveMs, pause, noteDelayScale, isLegato, connectionShape, tacticalExpression, noteDuration, noteOverlap, sustainNotes };
+}
+
+async function playGame(game, { record = false, start = 0, end = game.moves.length, timing = studio.readTiming() } = {}) {
   playbackAbort.abort();
   playbackAbort = new AbortController();
-  if (record && (!canvas.captureStream || typeof MediaRecorder === "undefined" || !getMimeType())) {
-    throw new Error("WebM video recording is not supported in this browser.");
-  }
+  if (record && start === end && timing.intro + timing.outro === 0) throw new Error("A setup-only video needs an opening or ending hold above zero.");
+  if (record && (!canvas.captureStream || typeof MediaRecorder === "undefined" || !getMimeType())) throw new Error("WebM video recording is not supported in this browser.");
+  validateComplexSettings(game);
   const abort = playbackAbort;
   const audio = new AudioContext();
   activeAudio = audio;
-  let recorder = null;
-  let stream = null;
+  let recorder = null, stream = null, recorderStarted = false, recorderError = null;
   let recordingDone = Promise.resolve();
-  let recorderStarted = false;
-  let recorderError = null;
   try {
-    const audioDestination = record ? audio.createMediaStreamDestination() : audio.destination;
-    const audioOutput = createAudioOutput(audio, audioDestination);
-    const board = createBoard(game.size, game.initialSetup);
-    const instrumentName = getSimpleInstrumentLabel();
-    statusEl.textContent = record ? `Rendering with ${instrumentName} audio...` : `Playing with ${instrumentName} audio...`;
+    await audio.resume();
+    const destination = record ? audio.createMediaStreamDestination() : audio.destination;
+    const output = createAudioOutput(audio, destination);
+    const analysisStart = isSimplePage() ? 0 : start;
+    if (record) await prepareExportAnalysis(game, analysisStart, end, abort.signal);
+    else await preparePlaybackAnalysis(game, analysisStart, end, abort.signal);
+    abort.signal.throwIfAborted();
+    const state = createCompositionState(game);
+    statusEl.textContent = "Preparing the starting position and music...";
+    for (let i = 0; i < start; i += 1) {
+      advanceComposition(game, i, state, end);
+      if (i % 16 === 0) { await wait(0, abort.signal); abort.signal.throwIfAborted(); }
+    }
+    const board = record ? createReplay(game)(start) : state.board;
+    const compiled = [];
     const samples = new Map();
-    const frameMs = 1000 / 30;
-    let activeDrone = null;
-    let activeDroneKey = "";
-    let tacticalPaceBoost = null;
-    let simpleTacticalExpressionCarry = null;
-    let simpleDramaPaceCarry = null;
-    let tacticalState = { tension: 0, release: 0, continuity: 0 };
-    let previousLeadMidi = null;
-    const boardHashes = new Set([boardHash(board)]);
+    if (record) {
+      for (let i = start; i < end; i += 1) {
+        compiled.push(advanceComposition(game, i, state, end));
+        if (i % 16 === 0) { await wait(0, abort.signal); abort.signal.throwIfAborted(); }
+      }
+      const refs = compiled.flatMap(({ entry, sustainNotes }) => [
+        ...entry.notes, ...sustainNotes,
+        ...(entry.rangeSettings.drone || entry.settings.drone ? [{ instrument: entry.settings.instrument, sampleName: getLowAnchorSampleName(game, entry.settings) }] : []),
+      ]);
+      const unique = [...new Map(refs.map((ref) => [`${ref.instrument}/${ref.sampleName}`, ref])).values()];
+      let loaded = 0;
+      await Promise.all(unique.map(async ({ instrument, sampleName }) => {
+        await ensureDecodedSample(samples, audio, instrument, sampleName, abort.signal);
+        loaded += 1;
+        statusEl.textContent = `Preparing audio: ${loaded} of ${unique.length} samples`;
+      }));
+    }
+    abort.signal.throwIfAborted();
+    drawBoard(board, null, 1, game, game.seed);
     const chunks = [];
-
     if (record) {
       stream = canvas.captureStream(30);
-      audioDestination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+      destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
       recorder = new MediaRecorder(stream, { mimeType: getMimeType() });
       activeRecorder = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size) chunks.push(event.data);
-      };
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       recordingDone = new Promise((resolve) => {
         recorder.onstop = resolve;
-        recorder.onerror = (event) => {
-          recorderError = event.error || new Error("Video recording failed.");
-          abort.abort();
-          resolve();
-        };
+        recorder.onerror = (event) => { recorderError = event.error || new Error("Video recording failed."); abort.abort(); resolve(); };
       });
-      recorder.start();
-      recorderStarted = true;
+      recorder.start(); recorderStarted = true;
     }
-
-    drawBoard(board, null, 1, game, game.seed);
-    await wait(500, abort.signal);
-    for (let index = 0; index < game.moves.length; index += 1) {
-      if (abort.signal.aborted) break;
-      const move = game.moves[index];
-      if (move.setup.length) boardHashes.clear();
-      const previousBoardHash = boardHash(board);
-      const result = applyMove(board, move);
-      result.previousBoardHash = previousBoardHash;
-      result.boardHash = boardHash(board);
-      result.repeatedPosition = !move.pass && boardHashes.has(result.boardHash);
-      boardHashes.add(result.boardHash);
-      const entry = buildMoveEntry(game, board, move, index, result, tacticalState, previousLeadMidi);
-      previousLeadMidi = entry.midi;
-      tacticalState = updateTacticalState(tacticalState, entry.tactics);
-      const rangeSettings = entry.rangeSettings;
-      const flow = entry.flow;
-      const profile = getMoodProfile(entry.settings.mood !== "neutral" ? entry.settings.mood : rangeSettings.mood);
-      const tacticalSettings = getTacticalSettings();
-      let tacticalExpression = neutralTacticalExpression();
-      let movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value)) * entry.phrase.pace;
-      if (isSimplePage()) {
-        const currentDramaPace = tacticalSettings.mode === "off" ? null : getSimpleDramaPace(entry.tactics);
-        if (currentDramaPace) {
-          simpleDramaPaceCarry = { multiplier: currentDramaPace, remaining: tacticalSettings.paceCarry };
-          movePace *= currentDramaPace;
-        } else if (simpleDramaPaceCarry?.remaining > 0 && tacticalSettings.mode !== "off" && simpleFightingDramaInput?.checked) {
-          movePace *= simpleDramaPaceCarry.multiplier;
-          simpleDramaPaceCarry.remaining -= 1;
-          if (simpleDramaPaceCarry.remaining <= 0) simpleDramaPaceCarry = null;
-        } else if (simpleDramaPaceCarry && (tacticalSettings.mode === "off" || !simpleFightingDramaInput?.checked)) {
-          simpleDramaPaceCarry = null;
-        }
-        if (simpleTacticalExpressionCarry?.remaining > 0) {
-          tacticalExpression = simpleTacticalExpressionCarry.expression;
-          simpleTacticalExpressionCarry.remaining -= 1;
-          if (simpleTacticalExpressionCarry.remaining <= 0) simpleTacticalExpressionCarry = null;
-        }
-        const currentExpression = tacticalSettings.mode === "off" ? null : getSimpleTacticalExpression(entry.tactics);
-        if (currentExpression) {
-          tacticalExpression = blendTacticalExpression(tacticalExpression, currentExpression);
-          simpleTacticalExpressionCarry = { expression: currentExpression, remaining: tacticalSettings.paceCarry };
-        }
-      } else if (tacticalPaceBoost?.remaining > 0) {
-        movePace *= tacticalPaceBoost.multiplier;
-        tacticalPaceBoost.remaining -= 1;
-        if (tacticalPaceBoost.remaining <= 0) tacticalPaceBoost = null;
-      }
-      if (!isSimplePage() && entry.tactics.captures > 0) {
-        const capturePace = tacticalSettings.capturePace;
-        tacticalPaceBoost = { multiplier: capturePace, remaining: tacticalSettings.paceCarry };
-        movePace *= capturePace;
-      } else if (!isSimplePage() && (entry.tactics.fight || entry.tactics.opponentAtari || entry.tactics.ownAtari)) {
-        const fightPace = tacticalSettings.fightPace;
-        tacticalPaceBoost = { multiplier: fightPace, remaining: tacticalSettings.paceCarry };
-        movePace *= fightPace;
-      }
-      const moveMs = movePace * 1000;
-      const isLegato = flow.connection === "legato" || rangeSettings.legato || entry.settings.legato;
-      const connectionShape = {
-        legato: { duration: 1.08, overlap: 1.1, stagger: 0.018 },
-        dovetail: { duration: 1.16, overlap: 1.28, stagger: 0.04 },
-        "voice-leading": { duration: 1, overlap: 0.95, stagger: 0.014 },
-        glissando: { duration: 1.22, overlap: 1.42, stagger: 0.065 },
-        natural: { duration: 1, overlap: 0.78, stagger: 0.024 },
-      }[flow.connection] || { duration: 1, overlap: 1, stagger: 0.018 };
-      if (rangeSettings.legato || entry.settings.legato) {
-        connectionShape.duration *= 1.18;
-        connectionShape.overlap *= 1.36;
-        connectionShape.stagger *= 0.55;
-      }
-      const structureShape = {
-        "through-composed": { duration: 1, overlap: 1 },
-        transition: { duration: 1.06, overlap: 1.16 },
-        "organic-unity": { duration: 1.12, overlap: 1.24 },
-      }[flow.structure] || { duration: 1, overlap: 1 };
-      const isFinalMove = index === game.moves.length - 1;
-      const finalTail = isFinalMove ? 2.4 : 1;
-      const noteDuration = movePace * Number(noteLengthInput.value) * profile.duration * connectionShape.duration * structureShape.duration * entry.phrase.duration * tacticalExpression.duration * (isFinalMove ? 1.35 : 1);
-      const noteOverlap = Math.min(
-        movePace * 0.68 * profile.overlap * connectionShape.overlap * structureShape.overlap * entry.phrase.overlap * tacticalExpression.overlap * finalTail,
-        isFinalMove ? 3.2 : isLegato ? 1.65 : 1.15,
-      );
-      const sustainRows = getActiveSustainRows(index + 1).filter((row) => shouldPlaySustain(row, index + 1));
+    statusEl.textContent = record ? "Recording the opening position..." : "Opening position...";
+    await wait(timing.intro * 1000, abort.signal);
+    let drone = null, droneKey = "", lastNoteEnd = 0;
+    for (let index = start; index < end; index += 1) {
+      abort.signal.throwIfAborted();
+      const step = record ? compiled[index - start] : advanceComposition(game, index, state, end);
+      if (record) applyMove(board, game.moves[index]);
+      const { entry, move, result, profile, movePace, moveMs, pause, noteDelayScale, isLegato, connectionShape, tacticalExpression, noteDuration, noteOverlap, sustainNotes } = step;
       const droneSampleName = getLowAnchorSampleName(game, entry.settings);
-      const droneSampleKey = `${entry.settings.instrument}/${droneSampleName}`;
-      const droneKey = rangeSettings.drone || entry.settings.drone ? `${droneSampleKey}-${profile.label}` : "";
-      const sampleRefs = [
-        ...entry.notes,
-        ...sustainRows.map((row) => {
-          const instrument = row.querySelector(".sustain-instrument").value;
-          return { instrument, sampleName: getSustainSampleName(game, instrument) };
-        }),
-        ...(droneKey ? [{ instrument: entry.settings.instrument, sampleName: droneSampleName }] : []),
-      ];
-      const uniqueRefs = new Map(sampleRefs.map((ref) => [`${ref.instrument}/${ref.sampleName}`, ref]));
-      await Promise.all([...uniqueRefs.values()].map(({ instrument, sampleName }) =>
-        ensureDecodedSample(samples, audio, instrument, sampleName, abort.signal),
-      ));
+      const nextDroneKey = entry.rangeSettings.drone || entry.settings.drone ? `${entry.settings.instrument}/${droneSampleName}-${profile.label}` : "";
+      const refs = [...entry.notes, ...sustainNotes, ...(nextDroneKey ? [{ instrument: entry.settings.instrument, sampleName: droneSampleName }] : [])];
+      await Promise.all([...new Map(refs.map((ref) => [`${ref.instrument}/${ref.sampleName}`, ref])).values()].map(({ instrument, sampleName }) => ensureDecodedSample(samples, audio, instrument, sampleName, abort.signal)));
       abort.signal.throwIfAborted();
       const noteStart = audio.currentTime + 0.014;
-      for (const row of sustainRows) {
-        const instrument = row.querySelector(".sustain-instrument").value;
-        const sampleName = getSustainSampleName(game, instrument);
-        const sample = await ensureDecodedSample(samples, audio, instrument, sampleName, abort.signal);
-        if (abort.signal.aborted) break;
-        playNote(
-          audio,
-          audioOutput,
-          sample,
-          noteStart,
-          movePace * 1.6,
-          move.color,
-          result.captures,
-          Math.min(movePace, 1.2),
-          1,
-          profile,
-          { legato: isLegato },
-        );
+      if (pause) {
+        const quietStart = noteStart + movePace;
+        output.master.gain.setValueAtTime(0.92, quietStart - 0.01);
+        output.master.gain.linearRampToValueAtTime(0.0001, quietStart);
+        output.master.gain.setValueAtTime(0.0001, quietStart + pause);
+        output.master.gain.linearRampToValueAtTime(0.92, quietStart + pause + 0.01);
       }
-      if (droneKey !== activeDroneKey) {
-        stopDrone(audio, activeDrone);
-        activeDrone = droneKey ? startDrone(audio, audioOutput, await ensureDecodedSample(samples, audio, entry.settings.instrument, droneSampleName, abort.signal), profile) : null;
-        activeDroneKey = droneKey;
+      for (const { instrument, sampleName } of sustainNotes) {
+        const sample = await ensureDecodedSample(samples, audio, instrument, sampleName, abort.signal);
+        lastNoteEnd = Math.max(lastNoteEnd, playNote(audio, output, sample, noteStart, movePace * 1.6, move.color, result.captures, Math.min(movePace, 1.2), 1, profile, { legato: isLegato }));
+      }
+      if (nextDroneKey !== droneKey) {
+        stopDrone(audio, drone);
+        drone = nextDroneKey ? startDrone(audio, output, await ensureDecodedSample(samples, audio, entry.settings.instrument, droneSampleName, abort.signal), profile) : null;
+        droneKey = nextDroneKey;
       }
       for (const [chordIndex, note] of entry.notes.entries()) {
         const sample = await ensureDecodedSample(samples, audio, note.instrument, note.sampleName, abort.signal);
-        if (abort.signal.aborted) break;
-        const kindTrim = note.kind === "tactical" ? 0.58 : note.kind === "blend" ? 1 : 1;
-        const noteIntensity = kindTrim * (note.intensity ?? 1) * entry.phrase.intensity * tacticalExpression.intensity;
+        const intensity = (note.kind === "tactical" ? 0.58 : 1) * (note.intensity ?? 1) * entry.phrase.intensity * tacticalExpression.intensity;
         const phraseProfile = { ...profile, brightness: profile.brightness * entry.phrase.brightness * tacticalExpression.brightness };
-        const scheduledTime = noteStart + chordIndex * connectionShape.stagger + (note.delay || 0);
-        playNote(
-          audio,
-          audioOutput,
-          sample,
-          scheduledTime,
-          noteDuration * (note.durationScale || 1),
-          move.color,
-          result.captures,
-          noteOverlap * (note.durationScale || 1),
-          note.kind === "tactical" ? Math.max(1, entry.chordSize + 1) : entry.chordSize,
-          phraseProfile,
-          { legato: isLegato, intensity: noteIntensity },
-        );
+        const onset = (chordIndex * connectionShape.stagger + (note.delay || 0)) * noteDelayScale;
+        let duration = noteDuration * (note.durationScale || 1), overlap = noteOverlap * (note.durationScale || 1);
+        if (pause) {
+          const available = Math.max(0.04, movePace - onset - 0.074);
+          const scale = Math.min(1, available / (duration + overlap));
+          duration *= scale; overlap *= scale;
+        }
+        lastNoteEnd = Math.max(lastNoteEnd, playNote(audio, output, sample, noteStart + onset, duration, move.color, result.captures, overlap, note.kind === "tactical" ? entry.chordSize + 1 : entry.chordSize, phraseProfile, { legato: isLegato, intensity }));
       }
       const started = performance.now();
-
+      statusEl.textContent = `${record ? "Rendering" : "Playing"} move ${index + 1} of ${game.moves.length}${record ? ` · ${Math.round((index - start + 1) / Math.max(1, end - start) * 100)}%` : ""}`;
       while (performance.now() - started < moveMs) {
-        if (abort.signal.aborted) break;
-        const progress = Math.min(1, (performance.now() - started) / moveMs);
-        drawBoard(board, move, progress, game, game.seed, entry);
-        await wait(frameMs, abort.signal);
+        abort.signal.throwIfAborted();
+        drawBoard(board, move, Math.min(1, (performance.now() - started) / moveMs), game, game.seed, entry);
+        await wait(1000 / 30, abort.signal);
       }
-
-      statusEl.textContent = `Move ${index + 1} of ${game.moves.length}${profile.label !== "Neutral" ? ` - ${profile.label}` : ""}`;
+      drawBoard(board, move, 1, game, game.seed, entry);
+      // Animation and audio clocks can drift. Hold the displayed move until
+      // the audible break and its fade-in finish before scheduling new notes.
+      if (pause) {
+        const quietEnd = noteStart + movePace + pause + 0.01;
+        while (audio.currentTime < quietEnd) await wait(10, abort.signal);
+      }
     }
-
-    if (!abort.signal.aborted) applySetup(board, game.finalSetup);
+    if (end === game.moves.length) applySetup(board, game.finalSetup);
     drawBoard(board, null, 1, game, game.seed);
-    const hadDrone = Boolean(activeDrone);
-    if (!abort.signal.aborted) {
-      stopDrone(audio, activeDrone);
-      await wait(record || hadDrone || getFlowSettings().connection === "legato" ? 2200 : 1500, abort.signal);
-    }
+    stopDrone(audio, drone);
+    const tail = timing.preserveTail ? Math.max(0, lastNoteEnd > 0 ? lastNoteEnd - audio.currentTime + 1.4 : 0, drone ? 1.4 : 0) : 0;
+    statusEl.textContent = "Holding the ending position...";
+    await wait(Math.max(timing.outro, tail) * 1000, abort.signal);
+    abort.signal.throwIfAborted();
     if (recorder && recorder.state !== "inactive") recorder.stop();
     await recordingDone;
     if (recorderError) throw recorderError;
-    return record ? (abort.signal.aborted ? null : new Blob(chunks, { type: recorder.mimeType })) : { stopped: abort.signal.aborted };
+    return record ? new Blob(chunks, { type: recorder.mimeType }) : { stopped: false };
   } catch (error) {
-    const cancelled = abort.signal.aborted;
-    abort.abort();
+    const cancelled = abort.signal.aborted; abort.abort();
     if (recorderError) throw recorderError;
     if (!cancelled) throw error;
     return record ? null : { stopped: true };
   } finally {
-    // Release all media resources on completion, cancellation, and sample/encoder errors.
     try {
       if (recorder && recorder.state !== "inactive") recorder.stop();
       if (recorderStarted) await recordingDone;
@@ -2324,87 +2165,200 @@ function clearDownload() {
   downloadUrl = null;
 }
 
-function setPlaybackControls(busy) {
-  fileInput.disabled = busy;
-  sizeInput.disabled = busy;
-  playButton.disabled = busy || !loadedGame;
-  renderButton.disabled = busy || !loadedGame;
+function setPlaybackControls(busy, record = false) {
+  const wasBusy = isBusy;
+  isBusy = busy;
+  if (record && busy) {
+    recordingControls = new Map([...document.querySelectorAll(".panel-right input, .panel-right select, .panel-right textarea, .panel-right button")].map((control) => [control, control.disabled]));
+    for (const control of recordingControls.keys()) control.disabled = true;
+  } else if (!busy && recordingControls) {
+    for (const [control, disabled] of recordingControls) control.disabled = disabled;
+    recordingControls = null;
+  }
+  studio.setBusy(busy);
+  fileInput.disabled = sizeInput.disabled = busy;
+  playButton.disabled = renderButton.disabled = busy || !loadedGame;
   stopButton.disabled = !busy;
+  updateEngineControls();
+  if (wasBusy && !busy && loadedGame && currentFrame?.board.moveNumber !== studio.position) seekPreview(studio.position);
 }
 
-fileInput.addEventListener("change", async () => {
-  const file = fileInput.files?.[0];
-  if (!file) return;
-  const loadId = ++fileLoadId;
-  loadedGame = null;
-  setPlaybackControls(false);
-  clearDownload();
-  metaEl.textContent = "No game loaded";
-  statusEl.textContent = "Loading SGF...";
+function updateMetadata() {
+  if (!loadedGame) return;
+  const game = loadedGame;
+  metaEl.textContent = [game.title, `${formatPlayer(game.black || "Black", game.blackRank)} vs ${formatPlayer(game.white || "White", game.whiteRank)}`, `${game.size}x${game.size}, ${game.moves.length} moves${game.komi ? `, komi ${game.komi}` : ""}`, game.date].filter(Boolean).join("\n");
+}
+
+function loadText(text, name = "game.sgf") {
+  if (isBusy) return;
+  fileLoadId += 1;
   try {
-    const text = await file.text();
-    if (loadId !== fileLoadId) return;
     const game = parseSgf(text);
     if (!game.moves.length && !game.initialSetup.length) throw new Error("This SGF has no moves or setup stones to play.");
-    loadedGame = game;
-    const lines = [
-      `${formatPlayer(game.black, game.blackRank)} vs ${formatPlayer(game.white, game.whiteRank)}`,
-      `${game.size}x${game.size}, ${game.moves.length} moves${game.komi ? `, komi ${game.komi}` : ""}`,
-      ...(game.date ? [game.date] : []),
-    ];
-    metaEl.textContent = lines.join("\n");
+    cancelAnalysis(false);
+    loadedGame = game; replay = createReplay(game); analysis = createAnalysis(game);
+    sourceName = name.replace(/\.sgf$/i, "").replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(0, 80) || "sgf-to-music";
+    clearDownload(); studio.setGame(game); updateMetadata(); seekPreview(0); setPlaybackControls(false);
+    if (engine.ready) engineProgress(`KataGo ready · ${engine.details.backend}. Analyze this game to generate estimates.`, 1);
     statusEl.textContent = "Ready to play or render.";
+    studio.elements.sgfTextInput.value = "";
   } catch (error) {
-    if (loadId !== fileLoadId) return;
-    statusEl.textContent = error.message;
+    statusEl.textContent = `${error.message}${loadedGame ? " Previous game retained." : ""}`;
   }
-  redrawCurrentBoard();
-  setPlaybackControls(false);
-});
+}
+
+async function loadFile(file) {
+  if (!file || isBusy) return;
+  const loadId = ++fileLoadId;
+  statusEl.textContent = "Loading SGF...";
+  try {
+    const text = await readSgfFile(file);
+    if (loadId === fileLoadId && !isBusy) loadText(text, file.name);
+  } catch (error) {
+    if (loadId === fileLoadId) statusEl.textContent = `${error.message}${loadedGame ? " Previous game retained." : ""}`;
+  }
+}
+
+function seekPreview(position) {
+  if (!loadedGame || isBusy) return;
+  const target = Math.max(0, Math.min(loadedGame.moves.length, Math.round(Number(position) || 0)));
+  const board = replay(target);
+  studio.setPosition(target);
+  drawBoard(board, null, 1, loadedGame, loadedGame.seed);
+}
+
+function analysisOptions() {
+  const controls = studio.elements;
+  return { source: controls.analysisSourceInput.value, showGraph: controls.showGraphInput.checked, showTerritory: controls.showTerritoryInput.checked, showDead: controls.showDeadInput.checked };
+}
+
+function updateEngineControls() {
+  const e = studio.elements;
+  playButton.disabled = renderButton.disabled = isBusy || analysisBusy || !loadedGame;
+  e.loadEngineButton.disabled = isBusy || analysisBusy || engine.ready;
+  e.analyzePositionButton.disabled = e.analyzeRangeButton.disabled = isBusy || analysisBusy || !engine.ready || !loadedGame;
+  e.cancelAnalysisButton.disabled = !analysisBusy;
+  if (analysisBusy) e.metadataFields.disabled = true;
+  else if (!isBusy) e.metadataFields.disabled = !loadedGame;
+}
+
+function engineProgress(message, fraction) {
+  const e = studio.elements;
+  e.engineStatus.textContent = message;
+  e.engineProgress.hidden = fraction === 1;
+  if (fraction === null) e.engineProgress.removeAttribute("value");
+  else e.engineProgress.value = fraction;
+}
+
+async function loadEngine() {
+  if (isBusy || analysisBusy) return;
+  const controller = new AbortController(); analysisAbort = controller; analysisBusy = true; updateEngineControls();
+  try { await engine.load({ signal: controller.signal, onProgress: engineProgress }); }
+  catch (error) { if (!controller.signal.aborted) engineProgress(error.message, 1); }
+  finally { if (analysisAbort === controller) { analysisBusy = false; analysisAbort = null; updateEngineControls(); } }
+}
+
+function cancelAnalysis(report = true) {
+  if (!analysisBusy) return;
+  analysisAbort?.abort(); engine.stop(); analysisAbort = null; analysisBusy = false;
+  if (isBusy) playbackAbort.abort();
+  engineProgress(report ? "Analysis cancelled. Previously completed positions are retained." : "KataGo stopped for the new game.", 1);
+  updateEngineControls();
+}
+
+async function analyzePositions(game, first, last, signal) {
+  if (!engine.ready) throw new Error("Download and load KataGo in Analysis Overlays before analyzing.");
+  if (game.size > 19) throw new Error("The local KataGo network supports boards up to 19×19.");
+  const rules = engineRules(game.rules);
+  const komi = game.komi.trim() === "" ? (rules === "japanese" || rules === "korean" ? 6.5 : rules === "new-zealand" ? 7 : 7.5) : Number(game.komi);
+  if (!Number.isFinite(komi)) throw new Error("Enter a numeric komi in Game Details before running KataGo.");
+  const controller = new AbortController(), cancel = () => { controller.abort(); engine.stop(); };
+  signal?.throwIfAborted(); signal?.addEventListener("abort", cancel, { once: true });
+  analysisAbort = controller; analysisBusy = true; updateEngineControls();
+  const getBoard = createReplay(game), model = analysis;
+  try {
+    for (let position = first; position <= last; position += 1) {
+      controller.signal.throwIfAborted();
+      const board = getBoard(position);
+      if (!model.has(position, board)) {
+        engineProgress(`Analyzing move ${position} of ${last} · ${rules} · komi ${komi}`, (position - first) / Math.max(1, last - first + 1));
+        const result = await engine.analyze(createEnginePosition(game, getBoard, position, komi, rules), controller.signal);
+        controller.signal.throwIfAborted();
+        if (game !== loadedGame) return;
+        model.put(position, board, result);
+      }
+      if (game === loadedGame && !isBusy) redrawCurrentBoard();
+    }
+    engineProgress(`KataGo analysis ready · moves ${first}–${last} · ${engine.details.backend}`, 1);
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    if (analysisAbort === controller) { analysisBusy = false; analysisAbort = null; updateEngineControls(); }
+  }
+}
+
+async function analyzePreview(bulk) {
+  if (!loadedGame || isBusy || analysisBusy) return;
+  try {
+    const range = studio.readRange();
+    await analyzePositions(loadedGame, bulk ? range.start : studio.position, bulk ? range.end : studio.position);
+    redrawCurrentBoard();
+  } catch (error) { if (error.name !== "AbortError") engineProgress(error.message, 1); }
+}
+
+async function prepareExportAnalysis(game, start, end, signal) {
+  const options = analysisOptions();
+  if (options.source === "katago" && studio.elements.analyzeExportInput.checked && (options.showGraph || options.showTerritory || options.showDead)) {
+    statusEl.textContent = "Preparing local KataGo analysis before recording...";
+    await analyzePositions(game, start, end, signal);
+  }
+}
+
+async function preparePlaybackAnalysis(game, start, end, signal) {
+  const options = analysisOptions();
+  if (options.source !== "katago" || !(options.showGraph || options.showTerritory || options.showDead)) return;
+  for (let position = start; position <= end; position += 1) {
+    signal.throwIfAborted();
+    if (!analysis.has(position, replay(position))) {
+      statusEl.textContent = "Preparing local KataGo analysis before playback...";
+      await analyzePositions(game, start, end, signal);
+      return;
+    }
+  }
+}
+
+fileInput.addEventListener("change", () => loadFile(fileInput.files?.[0]));
 
 playButton.addEventListener("click", async () => {
-  if (!loadedGame) return;
-  setPlaybackControls(true);
-  statusEl.textContent = "Playing locally...";
+  if (!loadedGame || isBusy || analysisBusy) return;
   try {
-    const result = await playGame(loadedGame);
-    statusEl.textContent = result?.stopped ? "Playback stopped." : "Playback complete.";
-  } catch (error) {
-    statusEl.textContent = error.message;
-  }
-  setPlaybackControls(false);
+    const { start, end } = studio.readRange(), timing = studio.readTiming();
+    const cursor = studio.position >= start && studio.position < end ? studio.position : start;
+    setPlaybackControls(true);
+    const result = await playGame(loadedGame, { start: cursor, end, timing });
+    statusEl.textContent = result?.stopped ? "Playback stopped. Play continues from the preview position." : "Playback complete.";
+  } catch (error) { statusEl.textContent = error.message; }
+  finally { setPlaybackControls(false); }
 });
 
-stopButton.addEventListener("click", async () => {
-  playbackAbort.abort();
-  stopButton.disabled = true;
-  statusEl.textContent = "Stopping...";
-  const audio = activeAudio;
-  if (audio && audio.state !== "closed") await audio.close();
+stopButton.addEventListener("click", () => {
+  playbackAbort.abort(); stopButton.disabled = true; statusEl.textContent = "Stopping...";
 });
 
 renderButton.addEventListener("click", async () => {
-  if (!loadedGame) return;
-  canvas.width = Number(sizeInput.value);
-  canvas.height = Number(sizeInput.value);
-  setPlaybackControls(true);
-  clearDownload();
-  statusEl.textContent = `Rendering video with ${getSimpleInstrumentLabel()} audio...`;
+  if (!loadedGame || isBusy || analysisBusy) return;
   try {
-    const blob = await playGame(loadedGame, { record: true });
-    if (!blob) {
-      statusEl.textContent = "Render stopped.";
-    } else {
-      downloadUrl = URL.createObjectURL(blob);
-      downloadLink.href = downloadUrl;
-      downloadLink.download = "sgf-to-music.webm";
-      downloadLink.hidden = false;
-      statusEl.textContent = "Video rendered locally.";
+    const range = studio.readRange(), timing = studio.readTiming();
+    setPlaybackControls(true, true); clearDownload();
+    canvas.width = canvas.height = Number(sizeInput.value);
+    const blob = await playGame(loadedGame, { record: true, ...range, timing });
+    if (!blob) statusEl.textContent = "Render stopped.";
+    else {
+      downloadUrl = URL.createObjectURL(blob); downloadLink.href = downloadUrl;
+      downloadLink.download = `${sourceName}${studio.elements.clipEnabledInput.checked ? `-moves-${range.start + 1}-${range.end}` : ""}.webm`;
+      downloadLink.hidden = false; statusEl.textContent = "Video rendered locally.";
     }
-  } catch (error) {
-    statusEl.textContent = error.message;
-  }
-  setPlaybackControls(false);
+  } catch (error) { statusEl.textContent = error.message; }
+  finally { setPlaybackControls(false); }
 });
 
 function redrawCurrentBoard() {
@@ -2443,6 +2397,7 @@ simplePresetInput?.addEventListener("change", applySimplePreset);
 });
 complexPresetInput?.addEventListener("change", applyComplexPreset);
 
+const settingsGroups = [...document.querySelectorAll(".settings-group")];
 settingsGroups.forEach((group) => {
   group.addEventListener("toggle", () => {
     if (!group.open) return;
@@ -2454,4 +2409,12 @@ settingsGroups.forEach((group) => {
 
 applySimplePreset();
 applyComplexPreset();
+createPreferences({
+  mode: isSimplePage() ? "simple" : "complex",
+  addRangeRow, addSustainRow,
+  onRestore(restored) {
+    if (rangeEditor) rangeEditor.hidden = !sectionPacingInput.checked;
+    studio.refreshAnalysis(restored.has("showGraphInput"));
+  },
+});
 drawBoard(createBoard(19), null, 1);

@@ -1,0 +1,3 @@
+assets/katago/worker.js -whitespace linguist-generated=true
+assets/katago/worker.js.LEGAL.txt linguist-generated=true
+vendor/** linguist-vendored=true

@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>About SGF to Music Video</title>
+    <meta name="description" content="Learn how SGF to Music Video turns Go games into expressive soundtracks, handles clip exports, and runs optional KataGo analysis locally." />
+    <link rel="canonical" href="https://sgf2mv.soumyak4.in/about.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SGF to Music Video" />
+    <meta property="og:title" content="About SGF to Music Video" />
+    <meta property="og:description" content="How Go positions become music, with local processing and optional KataGo evaluation." />
+    <meta property="og:url" content="https://sgf2mv.soumyak4.in/about.html" />
+    <meta property="og:image" content="https://sgf2mv.soumyak4.in/assets/site/logo.webp" />
+    <meta name="twitter:card" content="summary" />
     <meta name="theme-color" content="#151313" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="assets/site/favicons/favicon.ico" sizes="any" />
@@ -95,6 +104,13 @@
               percussion. Fighting Drama adds a small rubato-style tempo push and pull, and both
               Fighting Drama and percussion only work when Fighting Sounds is on.
             </p>
+            <p>
+              Simple mode treats Speed as a target, gently adjusting spacing for phrasing and
+              layered instruments while keeping the overall pace close. Completed KataGo estimates
+              can add darker, descending cues for evaluation losses. A loss above 45 percentage
+              points for the player who moved adds a 100 ms quiet break. These cues follow the
+              Fighting Sounds setting and require matching evaluations before and after the move.
+            </p>
           </section>
 
           <section>
@@ -115,10 +131,42 @@
           </section>
 
           <section>
+            <h2>Preview, clips, and game details</h2>
+            <p>
+              Upload, drop, or paste a game, or try the built-in example. Use the preview timeline to
+              jump to any move. Play continues from that position, and Stop keeps it ready to resume.
+              Clip &amp; Timing exports an inclusive move range with the correct preceding stones,
+              original move numbers, and musical context. Opening and ending holds are adjustable.
+            </p>
+            <p>
+              Game Details lets you correct names, ranks, title, event, date, komi, rules, and result
+              without changing the original SGF. The title and event sit vertically on the left,
+              with result, rules, and komi on the right, the graph above, and players below the board.
+              Settings return on your next visit; game-specific edits return when you reload that SGF.
+            </p>
+          </section>
+
+          <section>
+            <h2>Optional local analysis</h2>
+            <p>
+              Display win rates and territory saved in your SGF, use a lightweight enclosed-area
+              estimate, or download the optional KataGo network and runtime. KataGo runs locally
+              in a worker, using WebGPU or WASM. Your game positions stay in your browser.
+            </p>
+            <p>
+              Analyze a preview or clip before export to include a win-rate graph, ownership
+              shading, and predicted dead-stone marks. KataGo's neural estimates are not a full
+              tree search or a final score. Loading and analysis can be cancelled, and the model
+              works offline after it has been cached.
+            </p>
+          </section>
+
+          <section>
             <h2>Playback and updates</h2>
             <p>
-              Settings are read during playback, so changing instruments, phrasing, tactical accents,
-              tempo, or visual options affects the running game without stopping and starting again.
+              Settings are read during preview playback, so changing instruments, phrasing, tactical
+              accents, tempo, or visuals affects the running game. Video exports prepare their samples
+              and lock settings before recording starts.
               The final move lingers and fades out, and the PWA checks for fresh code when opened or
               revisited so cached installs refresh more reliably.
             </p>

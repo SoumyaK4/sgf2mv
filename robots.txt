@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sgf2mv.soumyak4.in/sitemap.xml

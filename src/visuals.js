@@ -1,3 +1,5 @@
+import { drawWinrateGraph } from "./analysis.js";
+
 // Palettes and board controls adapted from the standalone SGF Postcards editor.
 const palettes = {
   gold: ["#efc225", "#25252f", "#30303d", "#15151e", "#25252f", "#efc225", "#f8f8ff", "#b3b3c1", "outlined"],
@@ -31,6 +33,8 @@ const schema = {
   border: { group: "View & framing", label: "Frame border", type: "checkbox", default: false },
   font: { group: "Text", label: "Typeface", type: "select", default: "serif", options: [["sans", "System sans serif"], ["serif", "Serif"], ["mono", "Monospace"]] },
   fontScale: { group: "Text", label: "Text size", type: "range", default: 100, min: 80, max: 140, step: 5, unit: "%" },
+  showTitle: { group: "Text", label: "Show game title and event", type: "checkbox", default: true },
+  showDetails: { group: "Text", label: "Show result, rules and komi", type: "checkbox", default: true },
   showInfo: { group: "Text", label: "Show players and date", type: "checkbox", default: true },
   showPosition: { group: "Text", label: "Show move count", type: "checkbox", default: true },
   showNotes: { group: "Text", label: "Show musical notes", type: "checkbox", default: true },
@@ -49,6 +53,7 @@ export function createVisualControls(container, onChange) {
       if (spec.type === "select" && spec.options.some(([option]) => option === value)) settings[key] = value;
       if (spec.type === "range" && Number.isFinite(value)) settings[key] = Math.max(spec.min, Math.min(spec.max, Math.round(value / spec.step) * spec.step));
     }
+    if (typeof saved?.showTitle !== "boolean" && typeof saved?.showDetails === "boolean") settings.showTitle = saved.showDetails;
   } catch { /* Use defaults when browser storage is unavailable. */ }
   const groups = new Map();
   const inputs = new Map();
@@ -184,36 +189,49 @@ function drawStone(ctx, x, y, radius, color, texture, settings, gap) {
   return rings ? settings.background : fill;
 }
 
-export function drawVisualBoard({ ctx, canvas, board, activeMove, progress, game, title, activeEntry, settings, boardTexture, textureAt }) {
+export function drawVisualBoard({ ctx, canvas, board, activeMove, progress, game, title, activeEntry, settings, analysis, boardTexture, textureAt }) {
   const width = canvas.width, size = board.length;
-  const margin = width * settings.margin / 100, frame = width - 2 * margin;
-  const pad = frame * (settings.coordinates ? 0.115 : 0.085);
+  const margin = width * settings.margin / 100;
+  const textScale = settings.fontScale / 100;
+  const boardSpacing = width * 0.025 * Math.max(1, textScale);
+  const verticalTitle = settings.showTitle && game ? [game.title, game.event !== game.title ? game.event : ""].filter(Boolean).join(" · ") : "";
+  const verticalDetails = settings.showDetails && game ? [game.result ? `Recorded result: ${game.result}` : "", game.rules, game.komi ? `Komi ${game.komi}` : ""].filter(Boolean).join(" · ") : "";
+  const sideGutter = boardSpacing + Math.max(verticalTitle ? width * 0.03 * textScale : 0, verticalDetails ? width * 0.024 * textScale : 0);
+  const badge = [settings.showPosition && game ? `Move ${board.moveNumber || 0} of ${game.moves.length}` : "", settings.showNotes ? activeEntry?.displayLabel : ""].filter(Boolean).join(": ");
+  const graphHeight = analysis?.showGraph && analysis.points.some(Number.isFinite) ? width * 0.085 * Math.max(1, textScale) : 0;
+  const positionHeight = badge && !graphHeight ? width * 0.03 * textScale : 0;
+  const playersHeight = settings.showInfo ? width * 0.035 * textScale : 0;
+  const bandsHeight = graphHeight + positionHeight + playersHeight + 2 * boardSpacing;
+  const frame = Math.min(width - 2 * Math.max(margin, sideGutter), width - margin - bandsHeight);
+  const graphY = (width - frame - bandsHeight) / 2;
+  const left = (width - frame) / 2, top = graphY + graphHeight + positionHeight + boardSpacing;
+  const edgeRoom = 0.6;
+  const pad = frame * Math.max(settings.coordinates ? 0.085 : 0.045, edgeRoom / (size - 1 + 2 * edgeRoom));
   const gap = (frame - 2 * pad) / (size - 1);
   const fontFamily = { sans: "system-ui, sans-serif", serif: "Georgia, serif", mono: "monospace" }[settings.font];
-  const textScale = settings.fontScale / 100;
   const at = (x, y) => {
     const [a, b] = settings.rotation === "90" ? [size - 1 - y, x] : settings.rotation === "180" ? [size - 1 - x, size - 1 - y] : settings.rotation === "270" ? [y, size - 1 - x] : [x, y];
-    return [margin + pad + a * gap, margin + pad + b * gap];
+    return [left + pad + a * gap, top + pad + b * gap];
   };
   ctx.save();
   ctx.fillStyle = settings.background;
   ctx.fillRect(0, 0, width, width);
   ctx.beginPath();
-  ctx.roundRect(margin, margin, frame, frame, width * settings.radius / 100);
+  ctx.roundRect(left, top, frame, frame, width * settings.radius / 100);
   ctx.clip();
   if (settings.surface === "photo" && boardTexture.complete && boardTexture.naturalWidth > 0) {
-    ctx.drawImage(boardTexture, margin, margin, frame, frame);
+    ctx.drawImage(boardTexture, left, top, frame, frame);
   } else {
-    const gradient = ctx.createLinearGradient(margin, margin, width - margin, width - margin);
+    const gradient = ctx.createLinearGradient(left, top, left + frame, top + frame);
     gradient.addColorStop(0, settings.background);
     gradient.addColorStop(1, settings.gradient ? settings.panel : settings.background);
     ctx.fillStyle = gradient;
-    ctx.fillRect(margin, margin, frame, frame);
+    ctx.fillRect(left, top, frame, frame);
   }
   ctx.save();
-  ctx.translate(width / 2, width / 2);
+  ctx.translate(width / 2, top + frame / 2);
   ctx.scale(settings.zoom / 100, settings.zoom / 100);
-  ctx.translate(-width / 2, -width / 2);
+  ctx.translate(-width / 2, -top - frame / 2);
   ctx.save();
   ctx.globalAlpha = settings.gridOpacity / 100;
   ctx.strokeStyle = settings.gridColor;
@@ -248,6 +266,17 @@ export function drawVisualBoard({ ctx, canvas, board, activeMove, progress, game
       }
     }
   }
+  if (analysis?.territory.length) {
+    ctx.save();
+    for (const { x, y, color, strength = 1 } of analysis.territory) {
+      if (strength < 0.12) continue;
+      const [px, py] = at(x, y);
+      ctx.globalAlpha = 0.36 * strength;
+      ctx.fillStyle = color === "B" ? "#60a5fa" : "#fb923c";
+      ctx.fillRect(px - gap * 0.45, py - gap * 0.45, gap * 0.9, gap * 0.9);
+    }
+    ctx.restore();
+  }
   const lastMove = activeMove || board.lastMove;
   const radius = gap * settings.stoneSize / 100;
   board.forEach((row, y) => row.forEach((stone, x) => {
@@ -268,40 +297,80 @@ export function drawVisualBoard({ ctx, canvas, board, activeMove, progress, game
       ctx.strokeStyle = contrast(fill); ctx.lineWidth = Math.max(1, gap * 0.045); ctx.stroke();
     }
   }));
+  if (analysis?.dead.length) {
+    ctx.save();
+    for (const { x, y } of analysis.dead) {
+      const [px, py] = at(x, y), r = radius * 0.55;
+      ctx.beginPath(); ctx.moveTo(px - r, py - r); ctx.lineTo(px + r, py + r); ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r);
+      ctx.strokeStyle = "#15151b"; ctx.lineWidth = Math.max(2, gap * 0.14); ctx.stroke();
+      ctx.strokeStyle = "#f87171"; ctx.lineWidth = Math.max(1, gap * 0.07); ctx.stroke();
+    }
+    ctx.restore();
+  }
   ctx.restore();
   ctx.restore();
-  // Captions belong to the canvas margin, outside the board's clip and zoom.
+  // Text has dedicated bands outside the board's clip and zoom.
   ctx.save();
-  const captionBand = margin || frame * 0.07;
-  const topCaptionY = margin ? margin / 2 : frame * 0.035;
-  const bottomCaptionY = width - topCaptionY;
-  const captionSize = (fraction) => Math.min(width * fraction * textScale, captionBand * 0.72);
+  const captionSize = (fraction) => width * fraction * textScale;
   ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const badge = [settings.showPosition && game ? `Move ${board.moveNumber || 0} of ${game.moves.length}` : "", settings.showNotes ? activeEntry?.displayLabel : ""].filter(Boolean).join(": ");
-  if (badge) {
-    ctx.font = `700 ${captionSize(0.024)}px ${fontFamily}`;
+  ctx.textBaseline = "alphabetic";
+  if (badge && !graphHeight) {
+    ctx.font = `700 ${captionSize(0.021)}px ${fontFamily}`;
     ctx.fillStyle = settings.text;
+    const topCaptionY = top - boardSpacing - ctx.measureText(badge).actualBoundingBoxDescent;
     ctx.fillText(badge, width / 2, topCaptionY, frame * 0.9);
   }
   if (settings.showInfo) {
-    ctx.font = `700 ${captionSize(0.023)}px ${fontFamily}`;
+    ctx.font = `700 ${captionSize(0.02)}px ${fontFamily}`;
+    const playerAscent = Math.max(ctx.measureText(title.black).actualBoundingBoxAscent, ctx.measureText(title.white).actualBoundingBoxAscent);
+    const bottomCaptionY = top + frame + boardSpacing + playerAscent;
     ctx.fillStyle = settings.text;
     ctx.textAlign = "left";
-    ctx.fillText(title.black, margin + frame * 0.05, bottomCaptionY, frame * 0.34);
+    ctx.fillText(title.black, left + frame * 0.02, bottomCaptionY, frame * 0.35);
     ctx.textAlign = "right";
-    ctx.fillText(title.white, margin + frame * 0.95, bottomCaptionY, frame * 0.34);
+    ctx.fillText(title.white, left + frame * 0.98, bottomCaptionY, frame * 0.35);
     ctx.textAlign = "center";
-    ctx.font = `500 ${captionSize(0.018)}px ${fontFamily}`;
+    ctx.font = `500 ${captionSize(0.016)}px ${fontFamily}`;
     ctx.fillStyle = settings.muted;
-    ctx.fillText(title.date, width / 2, bottomCaptionY, frame * 0.2);
+    ctx.fillText(title.date, width / 2, bottomCaptionY, frame * 0.24);
   }
   ctx.restore();
   if (settings.border) {
     ctx.save();
     ctx.strokeStyle = settings.accent; ctx.lineWidth = Math.max(1, width * 0.002);
     const inset = ctx.lineWidth / 2;
-    ctx.beginPath(); ctx.roundRect(margin + inset, margin + inset, frame - 2 * inset, frame - 2 * inset, width * settings.radius / 100); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(left + inset, top + inset, frame - 2 * inset, frame - 2 * inset, width * settings.radius / 100); ctx.stroke();
     ctx.restore();
   }
+  for (const side of [
+    { text: verticalTitle, direction: -1, edge: left, font: `700 ${width * 0.024 * textScale}px ${fontFamily}`, color: settings.text },
+    { text: verticalDetails, direction: 1, edge: left + frame, font: `400 ${width * 0.018 * textScale}px ${fontFamily}`, color: settings.muted },
+  ]) {
+    if (!side.text) continue;
+    ctx.save();
+    ctx.font = side.font;
+    ctx.fillStyle = side.color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const text = fitText(ctx, side.text, frame * 0.92);
+    const offset = boardSpacing + ctx.measureText(text).actualBoundingBoxDescent;
+    ctx.translate(side.edge + side.direction * offset, top + frame / 2);
+    ctx.rotate(side.direction * Math.PI / 2);
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+  if (graphHeight) drawWinrateGraph(ctx, { x: left, y: graphY, width: frame, height: graphHeight, analysis, colors: settings, positionLabel: badge });
+}
+
+function fitText(ctx, value, maxWidth) {
+  const text = value.replace(/\s+/g, " ");
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  const chars = Array.from(text);
+  let low = 0, high = chars.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (ctx.measureText(chars.slice(0, middle).join("") + "…").width <= maxWidth) low = middle;
+    else high = middle - 1;
+  }
+  return chars.slice(0, low).join("") + "…";
 }

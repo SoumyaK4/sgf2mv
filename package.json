@@ -1,0 +1,14 @@
+{
+  "name": "sgf2mv",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:katago": "node scripts/build-katago.mjs"
+  },
+  "devDependencies": {
+    "@tensorflow/tfjs": "4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "4.22.0",
+    "@tensorflow/tfjs-backend-webgpu": "4.22.0",
+    "esbuild": "0.25.12"
+  }
+}

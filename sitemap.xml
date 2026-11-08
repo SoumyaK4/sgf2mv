@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://soumyak4.in/sgf-to-music/</loc>
+    <loc>https://sgf2mv.soumyak4.in/</loc>
   </url>
   <url>
-    <loc>https://soumyak4.in/sgf-to-music/complex.html</loc>
+    <loc>https://sgf2mv.soumyak4.in/complex.html</loc>
   </url>
   <url>
-    <loc>https://soumyak4.in/sgf-to-music/about.html</loc>
+    <loc>https://sgf2mv.soumyak4.in/about.html</loc>
+  </url>
+  <url>
+    <loc>https://sgf2mv.soumyak4.in/SGF-Postcards.html</loc>
   </url>
 </urlset>

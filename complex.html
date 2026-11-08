@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Complex SGF to Music Video</title>
+    <meta name="description" content="Create Go music videos with custom scales, instruments, board regions, move ranges, sustained layers, and optional local KataGo analysis." />
+    <link rel="canonical" href="https://sgf2mv.soumyak4.in/complex.html" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SGF to Music Video" />
+    <meta property="og:title" content="Complex SGF to Music Video" />
+    <meta property="og:description" content="Shape your Go soundtrack with custom instruments, scales, regions, and musical layers." />
+    <meta property="og:url" content="https://sgf2mv.soumyak4.in/complex.html" />
+    <meta property="og:image" content="https://sgf2mv.soumyak4.in/assets/site/logo.webp" />
+    <meta name="twitter:card" content="summary" />
     <meta name="theme-color" content="#151313" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="assets/site/favicons/favicon.ico" sizes="any" />
@@ -94,6 +103,7 @@
             <div class="range-editor" id="rangeEditor" hidden>
               <div class="range-list" id="rangeList"></div>
               <button id="addRangeButton" type="button" class="secondary-button">Add range</button>
+              <p class="small">Bounds are inclusive. Leave To blank for the rest of the game. Overlaps use the first matching range. Duplicate a row to reuse its settings.</p>
             </div>
           </details>
 
@@ -306,6 +316,7 @@
             <summary>Sustained Layers</summary>
             <div class="sustain-list" id="sustainList"></div>
             <button id="addSustainButton" type="button" class="secondary-button">Add sustained instrument</button>
+            <p class="small">Leave From and To blank for the whole game. Every sets the number of moves between notes. Duplicate a layer to reuse its settings.</p>
           </details>
 
           <details class="settings-group">
