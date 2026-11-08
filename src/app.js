@@ -1,3 +1,7 @@
+import { createVisualControls, drawVisualBoard } from "./visuals.js";
+
+const visualSettings = createVisualControls(document.querySelector("#visualControls"), () => redrawCurrentBoard());
+
 const fileInput = document.querySelector("#fileInput");
 const playButton = document.querySelector("#playButton");
 const stopButton = document.querySelector("#stopButton");
@@ -49,7 +53,6 @@ const positionColorInput = document.querySelector("#positionColorInput");
 const barLengthInput = document.querySelector("#barLengthInput");
 const phraseBarsInput = document.querySelector("#phraseBarsInput");
 const registerInput = document.querySelector("#registerInput");
-const textureInput = document.querySelector("#textureInput");
 const noteLengthInput = document.querySelector("#noteLengthInput");
 const regionRows = [...document.querySelectorAll(".region-row")];
 const statusEl = document.querySelector("#status");
@@ -100,11 +103,14 @@ const gotoMusicScale = [
 ];
 
 let loadedGame = null;
-let playbackAbort = { cancelled: false };
+let currentFrame = null;
+let playbackAbort = new AbortController();
 let activeAudio = null;
 let activeRecorder = null;
+let downloadUrl = null;
+let fileLoadId = 0;
 
-const letters = "abcdefghijklmnopqrstuvwxyz";
+const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const scaleModes = {
   "korean-pentatonic": [7, 9, 10, 2, 3],
   "chinese-pentatonic": [0, 2, 4, 7, 9],
@@ -423,43 +429,162 @@ function hashText(text) {
 }
 
 function parseSgf(text) {
-  const size = Number(text.match(/SZ\[(\d+)\]/)?.[1] || 19);
-  const komi = text.match(/KM\[([^\]]+)\]/)?.[1] || "";
-  const black = text.match(/PB\[([^\]]+)\]/)?.[1] || "Black";
-  const white = text.match(/PW\[([^\]]+)\]/)?.[1] || "White";
-  const blackRank = text.match(/BR\[([^\]]+)\]/)?.[1] || "";
-  const whiteRank = text.match(/WR\[([^\]]+)\]/)?.[1] || "";
-  const date = text.match(/DT\[([^\]]+)\]/)?.[1] || "";
-  const moves = [];
-  const movePattern = /;([BW])\[([a-z]{0,2})\]/gi;
-  let match;
+  let position = 0;
+  let gameCount = 0;
+  const stack = [];
+  const nodes = [];
+  const invalid = () => new Error("Invalid SGF: check the game tree and property values.");
+  const skipWhitespace = () => {
+    while (position < text.length && /\s/.test(text[position])) position += 1;
+  };
+  const readValue = () => {
+    position += 1;
+    let value = "";
+    while (position < text.length) {
+      const character = text[position++];
+      if (character === "]") return value;
+      if (character !== "\\") {
+        value += character;
+        continue;
+      }
+      if (position >= text.length) throw invalid();
+      const escaped = text[position++];
+      if (escaped === "\r" || escaped === "\n") {
+        const next = text[position];
+        if ((escaped === "\r" && next === "\n") || (escaped === "\n" && next === "\r")) position += 1;
+      } else {
+        value += escaped;
+      }
+    }
+    throw invalid();
+  };
 
-  while ((match = movePattern.exec(text))) {
-    const coord = match[2].toLowerCase();
-    moves.push({
-      color: match[1],
-      pass: coord.length !== 2,
-      x: coord.length === 2 ? letters.indexOf(coord[0]) : -1,
-      y: coord.length === 2 ? letters.indexOf(coord[1]) : -1,
-    });
+  // Walk the collection without recursion, keeping only the first game's main line.
+  while (position < text.length) {
+    skipWhitespace();
+    if (position === text.length) break;
+    const character = text[position];
+    const parent = stack.at(-1);
+    if (character === "(") {
+      if (parent && !parent.hasNode) throw invalid();
+      const selected = parent ? parent.selected && parent.children === 0 : gameCount === 0;
+      if (parent) parent.children += 1;
+      else gameCount += 1;
+      stack.push({ selected, children: 0, hasNode: false });
+      position += 1;
+    } else if (character === ")") {
+      if (!parent?.hasNode) throw invalid();
+      stack.pop();
+      position += 1;
+    } else if (character === ";") {
+      if (!parent || parent.children) throw invalid();
+      position += 1;
+      parent.hasNode = true;
+      const properties = new Map();
+      skipWhitespace();
+      while (position < text.length && !";()".includes(text[position])) {
+        const identifier = text.slice(position).match(/^[A-Z]+/)?.[0];
+        if (!identifier || properties.has(identifier)) throw invalid();
+        position += identifier.length;
+        skipWhitespace();
+        const values = [];
+        while (text[position] === "[") {
+          values.push(readValue());
+          skipWhitespace();
+        }
+        if (!values.length) throw invalid();
+        properties.set(identifier, values);
+      }
+      if (parent.selected) nodes.push(properties);
+    } else {
+      throw invalid();
+    }
   }
+  if (stack.length || !nodes.length) throw invalid();
 
+  const root = nodes[0];
+  const sizeValue = root.get("SZ")?.[0] ?? "19";
+  const size = Number(sizeValue);
+  if (!/^\d+$/.test(sizeValue) || !Number.isInteger(size) || size < 2 || size > 52) {
+    throw new Error("Supported SGF board sizes are square boards from 2 to 52.");
+  }
+  if (root.has("GM") && root.get("GM")[0] !== "1") throw new Error("Please choose a Go/Baduk/Weiqi SGF file.");
+  const point = (value) => {
+    const x = value.length === 2 ? letters.indexOf(value[0]) : -1;
+    const y = value.length === 2 ? letters.indexOf(value[1]) : -1;
+    if (x < 0 || y < 0 || x >= size || y >= size) throw new Error(`Invalid SGF point "${value}" for a ${size}x${size} board.`);
+    return { x, y };
+  };
+  const initialSetup = [];
+  const moves = [];
+  let pendingSetup = [];
+  for (const node of nodes) {
+    const color = node.has("B") ? "B" : node.has("W") ? "W" : null;
+    const hasSetup = ["AB", "AW", "AE"].some((property) => node.has(property));
+    if ((node.has("B") && node.has("W")) || (color && hasSetup)) throw invalid();
+    const setup = [];
+    const setupPoints = new Set();
+    for (const property of ["AB", "AW", "AE"]) {
+      for (const value of node.get(property) || []) {
+        const ends = value.split(":");
+        if (ends.length > 2) throw invalid();
+        const start = point(ends[0]);
+        const end = point(ends.at(-1));
+        if (start.x > end.x || start.y > end.y) throw invalid();
+        for (let y = start.y; y <= end.y; y += 1) {
+          for (let x = start.x; x <= end.x; x += 1) {
+            const key = `${x},${y}`;
+            if (setupPoints.has(key)) throw new Error(`Conflicting SGF setup stones at "${letters[x]}${letters[y]}".`);
+            setupPoints.add(key);
+            setup.push({ x, y, color: property === "AE" ? null : property[1] });
+          }
+        }
+      }
+    }
+    if (moves.length) pendingSetup.push(...setup);
+    else initialSetup.push(...setup);
+    if (color) {
+      const values = node.get(color);
+      if (values.length !== 1) throw invalid();
+      const pass = values[0] === "" || (values[0] === "tt" && size <= 19);
+      moves.push({ color, pass, ...(pass ? { x: -1, y: -1 } : point(values[0])), setup: pendingSetup });
+      pendingSetup = [];
+    }
+  }
+  const metadata = (property, fallback = "") => {
+    const value = nodes.find((node) => node.has(property))?.get(property)[0];
+    return value?.replace(/\s/g, " ") || fallback;
+  };
   return {
     raw: text,
     seed: hashText(text),
-    size: Number.isFinite(size) && size > 1 ? size : 19,
-    komi,
-    black,
-    white,
-    blackRank,
-    whiteRank,
-    date,
-    moves: moves.filter((move) => move.pass || (move.x >= 0 && move.y >= 0)),
+    size,
+    komi: metadata("KM"),
+    black: metadata("PB", "Black"),
+    white: metadata("PW", "White"),
+    blackRank: metadata("BR"),
+    whiteRank: metadata("WR"),
+    date: metadata("DT"),
+    initialSetup,
+    finalSetup: pendingSetup,
+    moves,
   };
 }
 
-function createBoard(size) {
-  return Array.from({ length: size }, () => Array(size).fill(null));
+function applySetup(board, setup = []) {
+  for (const { x, y, color } of setup) {
+    board[y][x] = color;
+    if (board.placed) board.placed[y][x] = 0;
+  }
+}
+
+function createBoard(size, setup = []) {
+  const board = Array.from({ length: size }, () => Array(size).fill(null));
+  board.placed = Array.from({ length: size }, () => Array(size).fill(0));
+  board.moveNumber = 0;
+  board.lastMove = null;
+  applySetup(board, setup);
+  return board;
 }
 
 function neighbors(x, y, size) {
@@ -476,7 +601,7 @@ function collectGroup(board, x, y) {
   const stack = [[x, y]];
   const seen = new Set();
   const stones = [];
-  let liberties = 0;
+  const liberties = new Set();
 
   while (stack.length) {
     const [cx, cy] = stack.pop();
@@ -486,12 +611,12 @@ function collectGroup(board, x, y) {
     stones.push([cx, cy]);
 
     for (const [nx, ny] of neighbors(cx, cy, board.length)) {
-      if (!board[ny][nx]) liberties += 1;
+      if (!board[ny][nx]) liberties.add(`${nx},${ny}`);
       if (board[ny][nx] === color) stack.push([nx, ny]);
     }
   }
 
-  return { stones, liberties };
+  return { stones, liberties: liberties.size };
 }
 
 function boardHash(board) {
@@ -499,8 +624,12 @@ function boardHash(board) {
 }
 
 function applyMove(board, move) {
+  applySetup(board, move.setup);
+  board.moveNumber += 1;
+  board.lastMove = move;
   if (move.pass || board[move.y]?.[move.x]) return { captures: 0, capturedStones: [], ownLiberties: 0, koLike: false };
   board[move.y][move.x] = move.color;
+  board.placed[move.y][move.x] = board.moveNumber;
   const opponent = move.color === "B" ? "W" : "B";
   let captures = 0;
   const capturedStones = [];
@@ -513,6 +642,7 @@ function applyMove(board, move) {
       group.stones.forEach(([sx, sy]) => {
         capturedStones.push([sx, sy]);
         board[sy][sx] = null;
+        board.placed[sy][sx] = 0;
       });
     }
   }
@@ -522,10 +652,11 @@ function applyMove(board, move) {
   if (ownGroup.liberties === 0) {
     ownGroup.stones.forEach(([sx, sy]) => {
       board[sy][sx] = null;
+      board.placed[sy][sx] = 0;
     });
   }
 
-  return { captures, capturedStones, ownLiberties, koLike: captures === 1 && ownLiberties === 1 };
+  return { captures, capturedStones, ownLiberties, koLike: captures === 1 && ownGroup.stones.length === 1 && ownLiberties === 1 };
 }
 
 function pickTexture(color, x, y, seed) {
@@ -548,131 +679,14 @@ function getBoardTitle(game) {
 }
 
 function drawBoard(board, activeMove = null, progress = 1, game = null, seed = 0, activeEntry = null) {
-  const size = board.length;
-  const width = canvas.width;
-  const pad = width * 0.085;
-  const gap = (width - pad * 2) / (size - 1);
-  const title = getBoardTitle(game);
-
-  if (textureInput.value === "photo" && boardTexture.complete) {
-    ctx.drawImage(boardTexture, 0, 0, width, width);
-  } else {
-    const wood = ctx.createLinearGradient(0, 0, width, width);
-    wood.addColorStop(0, "#e7b56b");
-    wood.addColorStop(0.45, "#c9873f");
-    wood.addColorStop(1, "#a7602c");
-    ctx.fillStyle = wood;
-    ctx.fillRect(0, 0, width, width);
-
-    ctx.globalAlpha = 0.16;
-    for (let i = 0; i < 90; i += 1) {
-      ctx.strokeStyle = i % 3 ? "#5b2e14" : "#fff2c7";
-      ctx.lineWidth = 1;
-      const y = ((i * 37) % width) + Math.sin(i) * 10;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.bezierCurveTo(width * 0.3, y + 24, width * 0.7, y - 24, width, y + 10);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  ctx.strokeStyle = "rgba(49, 28, 13, 0.78)";
-  ctx.lineWidth = Math.max(1, width * 0.0018);
-  for (let i = 0; i < size; i += 1) {
-    const p = pad + i * gap;
-    ctx.beginPath();
-    ctx.moveTo(pad, p);
-    ctx.lineTo(width - pad, p);
-    ctx.moveTo(p, pad);
-    ctx.lineTo(p, width - pad);
-    ctx.stroke();
-  }
-
-  const hoshi = size === 19 ? [3, 9, 15] : size === 13 ? [3, 6, 9] : [2, size - 3];
-  ctx.fillStyle = "rgba(40, 22, 12, 0.7)";
-  hoshi.forEach((x) => {
-    hoshi.forEach((y) => {
-      ctx.beginPath();
-      ctx.arc(pad + x * gap, pad + y * gap, gap * 0.105, 0, Math.PI * 2);
-      ctx.fill();
-    });
+  currentFrame = { board, activeMove, progress, game, seed, activeEntry };
+  drawVisualBoard({
+    ctx, canvas, board, activeMove, progress, game, activeEntry,
+    title: getBoardTitle(game),
+    settings: visualSettings,
+    boardTexture,
+    textureAt: (color, x, y) => pickTexture(color, x, y, seed),
   });
-
-  board.forEach((row, y) => {
-    row.forEach((stone, x) => {
-      if (!stone) return;
-      drawStone(pad + x * gap, pad + y * gap, gap * 0.516, stone, pickTexture(stone, x, y, seed));
-    });
-  });
-
-  if (activeMove && !activeMove.pass) {
-    const radius = gap * 0.576 * (0.72 + progress * 0.28);
-    drawStone(
-      pad + activeMove.x * gap,
-      pad + activeMove.y * gap,
-      radius,
-      activeMove.color,
-      pickTexture(activeMove.color, activeMove.x, activeMove.y, seed),
-    );
-    ctx.strokeStyle = activeMove.color === "B" ? "#f7ecd8" : "#24170f";
-    ctx.lineWidth = width * 0.004;
-    ctx.beginPath();
-    ctx.arc(pad + activeMove.x * gap, pad + activeMove.y * gap, radius * 0.48, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  if (activeEntry?.displayLabel) {
-    const badgeText = `Move ${activeEntry.moveNumber}: ${activeEntry.displayLabel}`;
-    ctx.font = `800 ${Math.round(width * 0.025)}px Inter, sans-serif`;
-    ctx.fillStyle = "rgba(42, 25, 12, 0.88)";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(badgeText, width / 2, pad * 0.52);
-    ctx.textAlign = "start";
-    ctx.textBaseline = "alphabetic";
-  }
-
-  ctx.fillStyle = "rgba(30, 19, 11, 0.9)";
-  ctx.font = `700 ${Math.round(width * 0.023)}px Georgia, serif`;
-  ctx.fillText(title.black, pad, width - pad * 0.42);
-  const whiteWidth = ctx.measureText(title.white).width;
-  ctx.fillText(title.white, width - pad - whiteWidth, width - pad * 0.42);
-  if (title.date) {
-    ctx.font = `700 ${Math.round(width * 0.019)}px Georgia, serif`;
-    const dateWidth = ctx.measureText(title.date).width;
-    ctx.fillText(title.date, (width - dateWidth) / 2, width - pad * 0.42);
-  }
-}
-
-function drawStone(x, y, r, color, texture) {
-  if (texture?.complete) {
-    ctx.shadowColor = "rgba(0, 0, 0, 0.48)";
-    ctx.shadowBlur = r * 0.26;
-    ctx.shadowOffsetY = r * 0.16;
-    ctx.drawImage(texture, x - r, y - r, r * 2, r * 2);
-    ctx.shadowColor = "transparent";
-    return;
-  }
-
-  const gradient = ctx.createRadialGradient(x - r * 0.32, y - r * 0.35, r * 0.08, x, y, r);
-  if (color === "B") {
-    gradient.addColorStop(0, "#5e554c");
-    gradient.addColorStop(0.42, "#171411");
-    gradient.addColorStop(1, "#030303");
-  } else {
-    gradient.addColorStop(0, "#ffffff");
-    gradient.addColorStop(0.55, "#e8e1d5");
-    gradient.addColorStop(1, "#a99b88");
-  }
-  ctx.fillStyle = gradient;
-  ctx.shadowColor = "rgba(31, 18, 8, 0.42)";
-  ctx.shadowBlur = r * 0.28;
-  ctx.shadowOffsetY = r * 0.18;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowColor = "transparent";
 }
 
 function getCurrentSettings() {
@@ -1756,12 +1770,12 @@ function shouldPlaySustain(row, moveNumber) {
   return (moveNumber - start) % every === 0;
 }
 
-async function getSampleBuffer(audio, instrumentName, sampleName) {
+async function getSampleBuffer(audio, instrumentName, sampleName, signal) {
   const path = percussionSamples[instrumentName] || sustainingPercussionSamples[instrumentName]
     ? `assets/music-notes/percussion/${sampleName}`
     : `assets/music-notes/${instrumentName}/${sampleName}.${(instrumentSamples[instrumentName] || instrumentSamples.piano).extension}`;
   if (!sampleBytes.has(path)) {
-    const response = await fetch(path);
+    const response = await fetch(path, { signal });
     if (!response.ok) throw new Error(`Could not load ${path}`);
     sampleBytes.set(path, await response.arrayBuffer());
   }
@@ -1789,7 +1803,8 @@ async function preloadSamples(audio, timeline, game) {
   return decoded;
 }
 
-async function ensureDecodedSample(decoded, audio, instrument, sampleName) {
+async function ensureDecodedSample(decoded, audio, instrument, sampleName, signal) {
+  signal?.throwIfAborted();
   const key = `${instrument}/${sampleName}`;
   if (!decoded.has(key)) {
     let audioCache = decodedSampleBuffers.get(audio);
@@ -1797,7 +1812,8 @@ async function ensureDecodedSample(decoded, audio, instrument, sampleName) {
       audioCache = new Map();
       decodedSampleBuffers.set(audio, audioCache);
     }
-    if (!audioCache.has(key)) audioCache.set(key, await getSampleBuffer(audio, instrument, sampleName));
+    if (!audioCache.has(key)) audioCache.set(key, await getSampleBuffer(audio, instrument, sampleName, signal));
+    signal?.throwIfAborted();
     decoded.set(key, audioCache.get(key));
   }
   return decoded.get(key);
@@ -1981,208 +1997,258 @@ function stopDrone(audio, drone, fade = 0.7) {
   drone.source.stop(now + fade + 0.05);
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function wait(ms, signal) {
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
+    if (signal?.aborted) finish();
+  });
 }
 
 async function playGame(game, { record = false } = {}) {
-  playbackAbort.cancelled = true;
-  playbackAbort = { cancelled: false };
+  playbackAbort.abort();
+  playbackAbort = new AbortController();
+  if (record && (!canvas.captureStream || typeof MediaRecorder === "undefined" || !getMimeType())) {
+    throw new Error("WebM video recording is not supported in this browser.");
+  }
   const abort = playbackAbort;
   const audio = new AudioContext();
   activeAudio = audio;
-  const audioDestination = record ? audio.createMediaStreamDestination() : audio.destination;
-  const audioOutput = createAudioOutput(audio, audioDestination);
-  const board = createBoard(game.size);
-  const instrumentName = getSimpleInstrumentLabel();
-  statusEl.textContent = record ? `Rendering with ${instrumentName} audio...` : `Playing with ${instrumentName} audio...`;
-  const samples = new Map();
-  const frameMs = 1000 / 30;
-  let activeDrone = null;
-  let activeDroneKey = "";
-  let tacticalPaceBoost = null;
-  let simpleTacticalExpressionCarry = null;
-  let simpleDramaPaceCarry = null;
-  let tacticalState = { tension: 0, release: 0, continuity: 0 };
-  let previousLeadMidi = null;
-  const boardHashes = new Set([boardHash(board)]);
   let recorder = null;
-  let chunks = [];
+  let stream = null;
+  let recordingDone = Promise.resolve();
+  let recorderStarted = false;
+  let recorderError = null;
+  try {
+    const audioDestination = record ? audio.createMediaStreamDestination() : audio.destination;
+    const audioOutput = createAudioOutput(audio, audioDestination);
+    const board = createBoard(game.size, game.initialSetup);
+    const instrumentName = getSimpleInstrumentLabel();
+    statusEl.textContent = record ? `Rendering with ${instrumentName} audio...` : `Playing with ${instrumentName} audio...`;
+    const samples = new Map();
+    const frameMs = 1000 / 30;
+    let activeDrone = null;
+    let activeDroneKey = "";
+    let tacticalPaceBoost = null;
+    let simpleTacticalExpressionCarry = null;
+    let simpleDramaPaceCarry = null;
+    let tacticalState = { tension: 0, release: 0, continuity: 0 };
+    let previousLeadMidi = null;
+    const boardHashes = new Set([boardHash(board)]);
+    const chunks = [];
 
-  if (record) {
-    const stream = canvas.captureStream(30);
-    audioDestination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
-    recorder = new MediaRecorder(stream, { mimeType: getMimeType() });
-    activeRecorder = recorder;
-    recorder.ondataavailable = (event) => {
-      if (event.data.size) chunks.push(event.data);
-    };
-    recorder.start();
-  }
-
-  drawBoard(board, null, 1, game, game.seed);
-  await wait(500);
-  for (let index = 0; index < game.moves.length; index += 1) {
-    if (abort.cancelled) break;
-    const move = game.moves[index];
-    const previousBoardHash = boardHash(board);
-    const result = applyMove(board, move);
-    result.previousBoardHash = previousBoardHash;
-    result.boardHash = boardHash(board);
-    result.repeatedPosition = boardHashes.has(result.boardHash);
-    boardHashes.add(result.boardHash);
-    const entry = buildMoveEntry(game, board, move, index, result, tacticalState, previousLeadMidi);
-    previousLeadMidi = entry.midi;
-    tacticalState = updateTacticalState(tacticalState, entry.tactics);
-    const rangeSettings = entry.rangeSettings;
-    const flow = entry.flow;
-    const profile = getMoodProfile(entry.settings.mood !== "neutral" ? entry.settings.mood : rangeSettings.mood);
-    const tacticalSettings = getTacticalSettings();
-    let tacticalExpression = neutralTacticalExpression();
-    let movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value)) * entry.phrase.pace;
-    if (isSimplePage()) {
-      const currentDramaPace = tacticalSettings.mode === "off" ? null : getSimpleDramaPace(entry.tactics);
-      if (currentDramaPace) {
-        simpleDramaPaceCarry = { multiplier: currentDramaPace, remaining: tacticalSettings.paceCarry };
-        movePace *= currentDramaPace;
-      } else if (simpleDramaPaceCarry?.remaining > 0 && tacticalSettings.mode !== "off" && simpleFightingDramaInput?.checked) {
-        movePace *= simpleDramaPaceCarry.multiplier;
-        simpleDramaPaceCarry.remaining -= 1;
-        if (simpleDramaPaceCarry.remaining <= 0) simpleDramaPaceCarry = null;
-      } else if (simpleDramaPaceCarry && (tacticalSettings.mode === "off" || !simpleFightingDramaInput?.checked)) {
-        simpleDramaPaceCarry = null;
-      }
-      if (simpleTacticalExpressionCarry?.remaining > 0) {
-        tacticalExpression = simpleTacticalExpressionCarry.expression;
-        simpleTacticalExpressionCarry.remaining -= 1;
-        if (simpleTacticalExpressionCarry.remaining <= 0) simpleTacticalExpressionCarry = null;
-      }
-      const currentExpression = tacticalSettings.mode === "off" ? null : getSimpleTacticalExpression(entry.tactics);
-      if (currentExpression) {
-        tacticalExpression = blendTacticalExpression(tacticalExpression, currentExpression);
-        simpleTacticalExpressionCarry = { expression: currentExpression, remaining: tacticalSettings.paceCarry };
-      }
-    } else if (tacticalPaceBoost?.remaining > 0) {
-      movePace *= tacticalPaceBoost.multiplier;
-      tacticalPaceBoost.remaining -= 1;
-      if (tacticalPaceBoost.remaining <= 0) tacticalPaceBoost = null;
-    }
-    if (!isSimplePage() && entry.tactics.captures > 0) {
-      const capturePace = tacticalSettings.capturePace;
-      tacticalPaceBoost = { multiplier: capturePace, remaining: tacticalSettings.paceCarry };
-      movePace *= capturePace;
-    } else if (!isSimplePage() && (entry.tactics.fight || entry.tactics.opponentAtari || entry.tactics.ownAtari)) {
-      const fightPace = tacticalSettings.fightPace;
-      tacticalPaceBoost = { multiplier: fightPace, remaining: tacticalSettings.paceCarry };
-      movePace *= fightPace;
-    }
-    const moveMs = movePace * 1000;
-    const isLegato = flow.connection === "legato" || rangeSettings.legato || entry.settings.legato;
-    const connectionShape = {
-      legato: { duration: 1.08, overlap: 1.1, stagger: 0.018 },
-      dovetail: { duration: 1.16, overlap: 1.28, stagger: 0.04 },
-      "voice-leading": { duration: 1, overlap: 0.95, stagger: 0.014 },
-      glissando: { duration: 1.22, overlap: 1.42, stagger: 0.065 },
-      natural: { duration: 1, overlap: 0.78, stagger: 0.024 },
-    }[flow.connection] || { duration: 1, overlap: 1, stagger: 0.018 };
-    if (rangeSettings.legato || entry.settings.legato) {
-      connectionShape.duration *= 1.18;
-      connectionShape.overlap *= 1.36;
-      connectionShape.stagger *= 0.55;
-    }
-    const structureShape = {
-      "through-composed": { duration: 1, overlap: 1 },
-      transition: { duration: 1.06, overlap: 1.16 },
-      "organic-unity": { duration: 1.12, overlap: 1.24 },
-    }[flow.structure] || { duration: 1, overlap: 1 };
-    const isFinalMove = index === game.moves.length - 1;
-    const finalTail = isFinalMove ? 2.4 : 1;
-    const noteDuration = movePace * Number(noteLengthInput.value) * profile.duration * connectionShape.duration * structureShape.duration * entry.phrase.duration * tacticalExpression.duration * (isFinalMove ? 1.35 : 1);
-    const noteOverlap = Math.min(
-      movePace * 0.68 * profile.overlap * connectionShape.overlap * structureShape.overlap * entry.phrase.overlap * tacticalExpression.overlap * finalTail,
-      isFinalMove ? 3.2 : isLegato ? 1.65 : 1.15,
-    );
-    for (const row of getActiveSustainRows(index + 1)) {
-      if (!shouldPlaySustain(row, index + 1)) continue;
-      const instrument = row.querySelector(".sustain-instrument").value;
-      const sampleName = getSustainSampleName(game, instrument);
-      const sample = await ensureDecodedSample(samples, audio, instrument, sampleName);
-      if (abort.cancelled) break;
-      playNote(
-        audio,
-        audioOutput,
-        sample,
-        audio.currentTime + 0.006,
-        movePace * 1.6,
-        move.color,
-        result.captures,
-        Math.min(movePace, 1.2),
-        1,
-        profile,
-        { legato: isLegato },
-      );
-    }
-    const droneSampleName = getLowAnchorSampleName(game, entry.settings);
-    const droneSampleKey = `${entry.settings.instrument}/${droneSampleName}`;
-    const droneKey = rangeSettings.drone || entry.settings.drone ? `${droneSampleKey}-${profile.label}` : "";
-    if (droneKey !== activeDroneKey) {
-      stopDrone(audio, activeDrone);
-      activeDrone = droneKey ? startDrone(audio, audioOutput, await ensureDecodedSample(samples, audio, entry.settings.instrument, droneSampleName), profile) : null;
-      activeDroneKey = droneKey;
-    }
-    for (const [chordIndex, note] of entry.notes.entries()) {
-      const sample = await ensureDecodedSample(samples, audio, note.instrument, note.sampleName);
-      if (abort.cancelled) break;
-      const kindTrim = note.kind === "tactical" ? 0.58 : note.kind === "blend" ? 1 : 1;
-      const noteIntensity = kindTrim * (note.intensity ?? 1) * entry.phrase.intensity * tacticalExpression.intensity;
-      const phraseProfile = { ...profile, brightness: profile.brightness * entry.phrase.brightness * tacticalExpression.brightness };
-      const scheduledTime = audio.currentTime + 0.014 + chordIndex * connectionShape.stagger + (note.delay || 0);
-      playNote(
-        audio,
-        audioOutput,
-        sample,
-        scheduledTime,
-        noteDuration * (note.durationScale || 1),
-        move.color,
-        result.captures,
-        noteOverlap * (note.durationScale || 1),
-        note.kind === "tactical" ? Math.max(1, entry.chordSize + 1) : entry.chordSize,
-        phraseProfile,
-        { legato: isLegato, intensity: noteIntensity },
-      );
-    }
-    const started = performance.now();
-
-    while (performance.now() - started < moveMs) {
-      if (abort.cancelled) break;
-      const progress = Math.min(1, (performance.now() - started) / moveMs);
-      drawBoard(board, move, progress, game, game.seed, entry);
-      await wait(frameMs);
-    }
-
-    statusEl.textContent = `Move ${index + 1} of ${game.moves.length}${profile.label !== "Neutral" ? ` - ${profile.label}` : ""}`;
-  }
-
-  drawBoard(board, null, 1, game, game.seed);
-  const hadDrone = Boolean(activeDrone);
-  stopDrone(audio, activeDrone);
-  await wait(record || hadDrone || getFlowSettings().connection === "legato" ? 2200 : 1500);
-  if (audio.state !== "closed") await audio.close();
-  if (activeAudio === audio) activeAudio = null;
-
-  if (record && recorder) {
-    if (recorder.state !== "inactive") {
-      const done = new Promise((resolve) => {
+    if (record) {
+      stream = canvas.captureStream(30);
+      audioDestination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+      recorder = new MediaRecorder(stream, { mimeType: getMimeType() });
+      activeRecorder = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data);
+      };
+      recordingDone = new Promise((resolve) => {
         recorder.onstop = resolve;
+        recorder.onerror = (event) => {
+          recorderError = event.error || new Error("Video recording failed.");
+          abort.abort();
+          resolve();
+        };
       });
-      recorder.stop();
-      await done;
+      recorder.start();
+      recorderStarted = true;
     }
-    if (activeRecorder === recorder) activeRecorder = null;
-    return abort.cancelled ? null : new Blob(chunks, { type: recorder.mimeType });
-  }
 
-  return { stopped: abort.cancelled };
+    drawBoard(board, null, 1, game, game.seed);
+    await wait(500, abort.signal);
+    for (let index = 0; index < game.moves.length; index += 1) {
+      if (abort.signal.aborted) break;
+      const move = game.moves[index];
+      if (move.setup.length) boardHashes.clear();
+      const previousBoardHash = boardHash(board);
+      const result = applyMove(board, move);
+      result.previousBoardHash = previousBoardHash;
+      result.boardHash = boardHash(board);
+      result.repeatedPosition = !move.pass && boardHashes.has(result.boardHash);
+      boardHashes.add(result.boardHash);
+      const entry = buildMoveEntry(game, board, move, index, result, tacticalState, previousLeadMidi);
+      previousLeadMidi = entry.midi;
+      tacticalState = updateTacticalState(tacticalState, entry.tactics);
+      const rangeSettings = entry.rangeSettings;
+      const flow = entry.flow;
+      const profile = getMoodProfile(entry.settings.mood !== "neutral" ? entry.settings.mood : rangeSettings.mood);
+      const tacticalSettings = getTacticalSettings();
+      let tacticalExpression = neutralTacticalExpression();
+      let movePace = Math.max(0.22, rangeSettings.pace || Number(paceInput.value)) * entry.phrase.pace;
+      if (isSimplePage()) {
+        const currentDramaPace = tacticalSettings.mode === "off" ? null : getSimpleDramaPace(entry.tactics);
+        if (currentDramaPace) {
+          simpleDramaPaceCarry = { multiplier: currentDramaPace, remaining: tacticalSettings.paceCarry };
+          movePace *= currentDramaPace;
+        } else if (simpleDramaPaceCarry?.remaining > 0 && tacticalSettings.mode !== "off" && simpleFightingDramaInput?.checked) {
+          movePace *= simpleDramaPaceCarry.multiplier;
+          simpleDramaPaceCarry.remaining -= 1;
+          if (simpleDramaPaceCarry.remaining <= 0) simpleDramaPaceCarry = null;
+        } else if (simpleDramaPaceCarry && (tacticalSettings.mode === "off" || !simpleFightingDramaInput?.checked)) {
+          simpleDramaPaceCarry = null;
+        }
+        if (simpleTacticalExpressionCarry?.remaining > 0) {
+          tacticalExpression = simpleTacticalExpressionCarry.expression;
+          simpleTacticalExpressionCarry.remaining -= 1;
+          if (simpleTacticalExpressionCarry.remaining <= 0) simpleTacticalExpressionCarry = null;
+        }
+        const currentExpression = tacticalSettings.mode === "off" ? null : getSimpleTacticalExpression(entry.tactics);
+        if (currentExpression) {
+          tacticalExpression = blendTacticalExpression(tacticalExpression, currentExpression);
+          simpleTacticalExpressionCarry = { expression: currentExpression, remaining: tacticalSettings.paceCarry };
+        }
+      } else if (tacticalPaceBoost?.remaining > 0) {
+        movePace *= tacticalPaceBoost.multiplier;
+        tacticalPaceBoost.remaining -= 1;
+        if (tacticalPaceBoost.remaining <= 0) tacticalPaceBoost = null;
+      }
+      if (!isSimplePage() && entry.tactics.captures > 0) {
+        const capturePace = tacticalSettings.capturePace;
+        tacticalPaceBoost = { multiplier: capturePace, remaining: tacticalSettings.paceCarry };
+        movePace *= capturePace;
+      } else if (!isSimplePage() && (entry.tactics.fight || entry.tactics.opponentAtari || entry.tactics.ownAtari)) {
+        const fightPace = tacticalSettings.fightPace;
+        tacticalPaceBoost = { multiplier: fightPace, remaining: tacticalSettings.paceCarry };
+        movePace *= fightPace;
+      }
+      const moveMs = movePace * 1000;
+      const isLegato = flow.connection === "legato" || rangeSettings.legato || entry.settings.legato;
+      const connectionShape = {
+        legato: { duration: 1.08, overlap: 1.1, stagger: 0.018 },
+        dovetail: { duration: 1.16, overlap: 1.28, stagger: 0.04 },
+        "voice-leading": { duration: 1, overlap: 0.95, stagger: 0.014 },
+        glissando: { duration: 1.22, overlap: 1.42, stagger: 0.065 },
+        natural: { duration: 1, overlap: 0.78, stagger: 0.024 },
+      }[flow.connection] || { duration: 1, overlap: 1, stagger: 0.018 };
+      if (rangeSettings.legato || entry.settings.legato) {
+        connectionShape.duration *= 1.18;
+        connectionShape.overlap *= 1.36;
+        connectionShape.stagger *= 0.55;
+      }
+      const structureShape = {
+        "through-composed": { duration: 1, overlap: 1 },
+        transition: { duration: 1.06, overlap: 1.16 },
+        "organic-unity": { duration: 1.12, overlap: 1.24 },
+      }[flow.structure] || { duration: 1, overlap: 1 };
+      const isFinalMove = index === game.moves.length - 1;
+      const finalTail = isFinalMove ? 2.4 : 1;
+      const noteDuration = movePace * Number(noteLengthInput.value) * profile.duration * connectionShape.duration * structureShape.duration * entry.phrase.duration * tacticalExpression.duration * (isFinalMove ? 1.35 : 1);
+      const noteOverlap = Math.min(
+        movePace * 0.68 * profile.overlap * connectionShape.overlap * structureShape.overlap * entry.phrase.overlap * tacticalExpression.overlap * finalTail,
+        isFinalMove ? 3.2 : isLegato ? 1.65 : 1.15,
+      );
+      const sustainRows = getActiveSustainRows(index + 1).filter((row) => shouldPlaySustain(row, index + 1));
+      const droneSampleName = getLowAnchorSampleName(game, entry.settings);
+      const droneSampleKey = `${entry.settings.instrument}/${droneSampleName}`;
+      const droneKey = rangeSettings.drone || entry.settings.drone ? `${droneSampleKey}-${profile.label}` : "";
+      const sampleRefs = [
+        ...entry.notes,
+        ...sustainRows.map((row) => {
+          const instrument = row.querySelector(".sustain-instrument").value;
+          return { instrument, sampleName: getSustainSampleName(game, instrument) };
+        }),
+        ...(droneKey ? [{ instrument: entry.settings.instrument, sampleName: droneSampleName }] : []),
+      ];
+      const uniqueRefs = new Map(sampleRefs.map((ref) => [`${ref.instrument}/${ref.sampleName}`, ref]));
+      await Promise.all([...uniqueRefs.values()].map(({ instrument, sampleName }) =>
+        ensureDecodedSample(samples, audio, instrument, sampleName, abort.signal),
+      ));
+      abort.signal.throwIfAborted();
+      const noteStart = audio.currentTime + 0.014;
+      for (const row of sustainRows) {
+        const instrument = row.querySelector(".sustain-instrument").value;
+        const sampleName = getSustainSampleName(game, instrument);
+        const sample = await ensureDecodedSample(samples, audio, instrument, sampleName, abort.signal);
+        if (abort.signal.aborted) break;
+        playNote(
+          audio,
+          audioOutput,
+          sample,
+          noteStart,
+          movePace * 1.6,
+          move.color,
+          result.captures,
+          Math.min(movePace, 1.2),
+          1,
+          profile,
+          { legato: isLegato },
+        );
+      }
+      if (droneKey !== activeDroneKey) {
+        stopDrone(audio, activeDrone);
+        activeDrone = droneKey ? startDrone(audio, audioOutput, await ensureDecodedSample(samples, audio, entry.settings.instrument, droneSampleName, abort.signal), profile) : null;
+        activeDroneKey = droneKey;
+      }
+      for (const [chordIndex, note] of entry.notes.entries()) {
+        const sample = await ensureDecodedSample(samples, audio, note.instrument, note.sampleName, abort.signal);
+        if (abort.signal.aborted) break;
+        const kindTrim = note.kind === "tactical" ? 0.58 : note.kind === "blend" ? 1 : 1;
+        const noteIntensity = kindTrim * (note.intensity ?? 1) * entry.phrase.intensity * tacticalExpression.intensity;
+        const phraseProfile = { ...profile, brightness: profile.brightness * entry.phrase.brightness * tacticalExpression.brightness };
+        const scheduledTime = noteStart + chordIndex * connectionShape.stagger + (note.delay || 0);
+        playNote(
+          audio,
+          audioOutput,
+          sample,
+          scheduledTime,
+          noteDuration * (note.durationScale || 1),
+          move.color,
+          result.captures,
+          noteOverlap * (note.durationScale || 1),
+          note.kind === "tactical" ? Math.max(1, entry.chordSize + 1) : entry.chordSize,
+          phraseProfile,
+          { legato: isLegato, intensity: noteIntensity },
+        );
+      }
+      const started = performance.now();
+
+      while (performance.now() - started < moveMs) {
+        if (abort.signal.aborted) break;
+        const progress = Math.min(1, (performance.now() - started) / moveMs);
+        drawBoard(board, move, progress, game, game.seed, entry);
+        await wait(frameMs, abort.signal);
+      }
+
+      statusEl.textContent = `Move ${index + 1} of ${game.moves.length}${profile.label !== "Neutral" ? ` - ${profile.label}` : ""}`;
+    }
+
+    if (!abort.signal.aborted) applySetup(board, game.finalSetup);
+    drawBoard(board, null, 1, game, game.seed);
+    const hadDrone = Boolean(activeDrone);
+    if (!abort.signal.aborted) {
+      stopDrone(audio, activeDrone);
+      await wait(record || hadDrone || getFlowSettings().connection === "legato" ? 2200 : 1500, abort.signal);
+    }
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    await recordingDone;
+    if (recorderError) throw recorderError;
+    return record ? (abort.signal.aborted ? null : new Blob(chunks, { type: recorder.mimeType })) : { stopped: abort.signal.aborted };
+  } catch (error) {
+    const cancelled = abort.signal.aborted;
+    abort.abort();
+    if (recorderError) throw recorderError;
+    if (!cancelled) throw error;
+    return record ? null : { stopped: true };
+  } finally {
+    // Release all media resources on completion, cancellation, and sample/encoder errors.
+    try {
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      if (recorderStarted) await recordingDone;
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      if (audio.state !== "closed") await audio.close();
+      if (activeAudio === audio) activeAudio = null;
+      if (activeRecorder === recorder) activeRecorder = null;
+    }
+  }
 }
 
 function getMimeType() {
@@ -2251,27 +2317,54 @@ function applyComplexPreset() {
   setControlValue(phraseBarsInput, preset.phraseBars);
 }
 
+function clearDownload() {
+  downloadLink.hidden = true;
+  downloadLink.removeAttribute("href");
+  if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+  downloadUrl = null;
+}
+
+function setPlaybackControls(busy) {
+  fileInput.disabled = busy;
+  sizeInput.disabled = busy;
+  playButton.disabled = busy || !loadedGame;
+  renderButton.disabled = busy || !loadedGame;
+  stopButton.disabled = !busy;
+}
+
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
-  const text = await file.text();
-  loadedGame = parseSgf(text);
-  canvas.width = Number(sizeInput.value);
-  canvas.height = Number(sizeInput.value);
-  drawBoard(createBoard(loadedGame.size), null, 1, loadedGame, loadedGame.seed);
-  metaEl.innerHTML = `<span>${formatPlayer(loadedGame.black, loadedGame.blackRank)} vs ${formatPlayer(loadedGame.white, loadedGame.whiteRank)}<br>${loadedGame.size}x${loadedGame.size}, ${loadedGame.moves.length} moves${loadedGame.komi ? `, komi ${loadedGame.komi}` : ""}${loadedGame.date ? `<br>${loadedGame.date}` : ""}</span>`;
-  statusEl.textContent = "Ready to play or render.";
-  playButton.disabled = false;
-  renderButton.disabled = false;
-  stopButton.disabled = true;
-  downloadLink.hidden = true;
+  const loadId = ++fileLoadId;
+  loadedGame = null;
+  setPlaybackControls(false);
+  clearDownload();
+  metaEl.textContent = "No game loaded";
+  statusEl.textContent = "Loading SGF...";
+  try {
+    const text = await file.text();
+    if (loadId !== fileLoadId) return;
+    const game = parseSgf(text);
+    if (!game.moves.length && !game.initialSetup.length) throw new Error("This SGF has no moves or setup stones to play.");
+    loadedGame = game;
+    const lines = [
+      `${formatPlayer(game.black, game.blackRank)} vs ${formatPlayer(game.white, game.whiteRank)}`,
+      `${game.size}x${game.size}, ${game.moves.length} moves${game.komi ? `, komi ${game.komi}` : ""}`,
+      ...(game.date ? [game.date] : []),
+    ];
+    metaEl.textContent = lines.join("\n");
+    statusEl.textContent = "Ready to play or render.";
+  } catch (error) {
+    if (loadId !== fileLoadId) return;
+    statusEl.textContent = error.message;
+  }
+  redrawCurrentBoard();
+  setPlaybackControls(false);
 });
 
 playButton.addEventListener("click", async () => {
   if (!loadedGame) return;
-  playButton.disabled = true;
-  renderButton.disabled = true;
-  stopButton.disabled = false;
+  setPlaybackControls(true);
   statusEl.textContent = "Playing locally...";
   try {
     const result = await playGame(loadedGame);
@@ -2279,34 +2372,31 @@ playButton.addEventListener("click", async () => {
   } catch (error) {
     statusEl.textContent = error.message;
   }
-  playButton.disabled = false;
-  renderButton.disabled = false;
-  stopButton.disabled = true;
+  setPlaybackControls(false);
 });
 
 stopButton.addEventListener("click", async () => {
-  playbackAbort.cancelled = true;
+  playbackAbort.abort();
   stopButton.disabled = true;
   statusEl.textContent = "Stopping...";
-  if (activeAudio && activeAudio.state !== "closed") await activeAudio.close();
+  const audio = activeAudio;
+  if (audio && audio.state !== "closed") await audio.close();
 });
 
 renderButton.addEventListener("click", async () => {
   if (!loadedGame) return;
   canvas.width = Number(sizeInput.value);
   canvas.height = Number(sizeInput.value);
-  playButton.disabled = true;
-  renderButton.disabled = true;
-  stopButton.disabled = false;
-  downloadLink.hidden = true;
+  setPlaybackControls(true);
+  clearDownload();
   statusEl.textContent = `Rendering video with ${getSimpleInstrumentLabel()} audio...`;
   try {
     const blob = await playGame(loadedGame, { record: true });
     if (!blob) {
       statusEl.textContent = "Render stopped.";
     } else {
-      const url = URL.createObjectURL(blob);
-      downloadLink.href = url;
+      downloadUrl = URL.createObjectURL(blob);
+      downloadLink.href = downloadUrl;
       downloadLink.download = "sgf-to-music.webm";
       downloadLink.hidden = false;
       statusEl.textContent = "Video rendered locally.";
@@ -2314,23 +2404,24 @@ renderButton.addEventListener("click", async () => {
   } catch (error) {
     statusEl.textContent = error.message;
   }
-  playButton.disabled = false;
-  renderButton.disabled = false;
-  stopButton.disabled = true;
+  setPlaybackControls(false);
 });
 
 function redrawCurrentBoard() {
-  canvas.width = Number(sizeInput.value);
-  canvas.height = Number(sizeInput.value);
-  if (loadedGame) {
-    drawBoard(createBoard(loadedGame.size), null, 1, loadedGame, loadedGame.seed);
+  const size = Number(sizeInput.value);
+  if (canvas.width !== size) canvas.width = size;
+  if (canvas.height !== size) canvas.height = size;
+  if (currentFrame?.game === loadedGame) {
+    const { board, activeMove, progress, game, seed, activeEntry } = currentFrame;
+    drawBoard(board, activeMove, progress, game, seed, activeEntry);
+  } else if (loadedGame) {
+    drawBoard(createBoard(loadedGame.size, loadedGame.initialSetup), null, 1, loadedGame, loadedGame.seed);
   } else {
     drawBoard(createBoard(19), null, 1);
   }
 }
 
 sizeInput.addEventListener("change", redrawCurrentBoard);
-textureInput.addEventListener("change", redrawCurrentBoard);
 initializeRegionRows();
 sectionPacingInput?.addEventListener("change", () => {
   rangeEditor.hidden = !sectionPacingInput.checked;

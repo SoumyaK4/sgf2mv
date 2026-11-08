@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SGF Postcards — Make your game your own</title>
+<style>
+  :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #1c1c24; color: #f8f8ff; --gold: #efc225; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  main { max-width: 1520px; margin: auto; padding: 32px 24px; }
+  header { margin-bottom: 24px; }
+  .eyebrow { color: var(--gold); font-size: 12px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+  h1 { margin: 8px 0; font-size: clamp(30px, 5vw, 48px); line-height: 1.15; letter-spacing: -.045em; }
+  p { color: #b3b3c1; margin: 8px 0; }
+  button, input, select, textarea { font: inherit; }
+  button, select, input[type=file]::file-selector-button { border: 1px solid #454553; border-radius: 8px; padding: 10px 16px; background: #30303d; color: #f8f8ff; cursor: pointer; }
+  button:hover, select:hover { background: #3a3a49; }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+  button:disabled { opacity: .45; cursor: wait; }
+  input:not([type=file]):not([type=range]):not([type=color]):not([type=checkbox]), textarea { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #454553; border-radius: 7px; background: #202029; color: #f8f8ff; }
+  textarea { resize: vertical; }
+  select { width: 100%; min-width: 0; padding: 9px; }
+  .upload { border: 1px dashed #65606a; border-radius: 14px; background: #25252f; padding: 24px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; }
+  .upload.dragging { border-color: var(--gold); background: #32302c; }
+  .upload > div { min-width: 0; flex: 1 1 360px; }
+  .upload label { display: block; font-weight: 650; margin-bottom: 8px; }
+  input[type=file] { max-width: 100%; width: 380px; color: #b3b3c1; }
+  input[type=file]::file-selector-button { margin-right: 12px; background: var(--gold); color: #202029; border-color: transparent; font-weight: 650; }
+  .upload small { display: block; color: #b3b3c1; margin-top: 8px; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .upload > .actions { flex: 0 1 auto; margin-left: auto; }
+  #status { min-height: 1.5em; margin: 12px 0 20px; overflow-wrap: anywhere; }
+  #status.error { color: #ffb3b7; }
+  .editor { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: start; gap: 28px; }
+  aside { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; padding-right: 6px; scrollbar-width: thin; }
+  details { border: 1px solid #393946; border-radius: 10px; background: #25252f; margin-bottom: 12px; }
+  summary { padding: 14px; font-weight: 650; cursor: pointer; }
+  #settings-panel { background: none; border: 0; margin: 0; }
+  #settings-panel > summary { display: none; }
+  .fields { padding: 0 14px 14px; display: grid; gap: 14px; }
+  .field label, .field-label { display: block; color: #b3b3c1; font-size: 13px; margin-bottom: 6px; }
+  .field.check label { display: flex; align-items: center; gap: 8px; margin: 0; color: #eee; }
+  .field.check input { width: 16px; height: 16px; }
+  .color-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .color-fields label { display: flex; align-items: center; gap: 8px; color: #c6c6d0; font-size: 12px; }
+  .toolbar { border: 1px solid #393946; border-radius: 10px; background: #25252f; padding: 14px; margin-bottom: 18px; }
+  .toolbar-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .toolbar input[type=number] { width: 75px !important; }
+  .toolbar button { padding: 6px 12px; }
+  .toolbar #play { min-width: 78px; }
+  #position, .field input[type=range] { display: block; width: 100%; margin: 0; accent-color: var(--gold); }
+  .field output { float: right; }
+  output { color: #f8f8ff; margin-left: 8px; font-variant-numeric: tabular-nums; }
+  input[type=color] { flex: 0 0 36px; width: 36px; height: 32px; padding: 2px; border: 1px solid #454553; border-radius: 6px; background: #30303d; cursor: pointer; }
+  .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  figure { margin: 0; min-width: 0; }
+  canvas { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid #3a3a48; background: repeating-conic-gradient(#343440 0% 25%, #292933 0% 50%) 50% / 20px 20px; }
+  #tilted { cursor: grab; touch-action: none; }
+  #tilted:active { cursor: grabbing; }
+  figcaption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; }
+  figcaption strong { display: block; font-size: 15px; }
+  figcaption small { color: #b3b3c1; font-size: 12px; display: block; }
+  .small { font-size: 12px; color: #b3b3c1; }
+  .quiet { font-size: 12px; padding: 7px 10px; }
+  .export-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 18px; padding-top: 20px; border-top: 1px solid #393946; }
+  .branches { padding-top: 12px; display: grid; gap: 10px; }
+  #paste-panel { margin: 12px 0; padding: 16px; background: #25252f; border-radius: 10px; }
+  #paste-panel label { display: block; margin-bottom: 8px; }
+  #paste-panel .actions { margin-top: 10px; }
+  dialog { max-width: min(1000px, 94vw); max-height: 94dvh; width: 100%; padding: 16px; border: 1px solid #555; border-radius: 12px; background: #1c1c24; color: #fff; }
+  dialog::backdrop { background: #000b; }
+  dialog canvas { max-width: 100%; width: auto; max-height: 78dvh; margin: 12px auto 0; }
+  dialog .actions { justify-content: space-between; }
+  .download { color: #24242d; background: var(--gold); border-color: transparent; font-size: 14px; font-weight: 650; white-space: nowrap; }
+  .download:hover { background: #ffda58; }
+  footer { margin-top: 28px; color: #9c9cab; font-size: 13px; max-width: 82ch; }
+  a { color: #d8d2e1; }
+  [hidden] { display: none !important; }
+  @media (max-width: 1050px) { .editor { grid-template-columns: 250px minmax(0, 1fr); gap: 18px; } .previews { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { main { padding: 24px 16px; } .editor { grid-template-columns: 1fr; } aside { position: static; max-height: none; padding: 0; } #settings-panel > summary { display: list-item; padding: 14px; margin-bottom: 12px; border: 1px solid #454553; border-radius: 10px; background: #25252f; } .upload { padding: 16px; } .toolbar-top { align-items: start; } }
+</style>
+<main>
+  <header>
+    <div class="eyebrow">SGF Postcards</div>
+    <h1>Your game. Your style.</h1>
+    <p>Turn an SGF into two keepsakes. Shape the board, choose your colors, and tell the story beneath.</p>
+  </header>
+  <section class="upload" id="drop" aria-label="Load a game">
+    <div>
+      <label for="file">Choose an SGF, or drop it here</label>
+      <input id="file" type="file" accept=".sgf,application/x-go-sgf,text/plain">
+      <small>Everything stays in your browser. Works offline; no installation needed.</small>
+    </div>
+    <div class="actions"><button id="paste-toggle" type="button" aria-expanded="false" aria-controls="paste-panel">Paste SGF</button></div>
+  </section>
+  <section id="paste-panel" hidden><label for="sgf-text">Paste an SGF game or collection</label><textarea id="sgf-text" rows="5" spellcheck="false" placeholder="(;GM[1]FF[4]SZ[19]PB[Black]PW[White];B[pd];W[dd])"></textarea><div class="actions"><button id="load-text" type="button">Load SGF</button></div></section>
+  <p id="status" role="status" aria-live="polite"></p>
+  <div class="editor">
+  <aside id="settings" aria-label="Postcard settings">
+    <details id="settings-panel" open><summary>Customize style &amp; game details</summary>
+    <details open><summary>Colors &amp; stones</summary><div class="fields" id="theme-fields"></div></details>
+    <details><summary>Board &amp; annotations</summary><div class="fields" id="board-fields"></div></details>
+    <details><summary>Close-up composition</summary><div class="fields" id="crop-fields"></div></details>
+    <details><summary>Layout &amp; typography</summary><div class="fields" id="layout-fields"></div></details>
+    <details id="info-settings"><summary>Game details &amp; caption</summary><div class="fields"><p class="small">Edit the text shown on your postcards. Your SGF file stays unchanged.</p><div class="fields" id="info-fields" style="padding:0"></div><button id="restore-info" class="quiet" type="button">Restore SGF details</button></div></details>
+    <details><summary>Export</summary><div class="fields" id="export-fields"></div></details>
+    <div class="actions"><button id="reset-style" class="quiet" type="button">Reset style</button><button id="save-style" class="quiet" type="button">Export style</button><button id="load-style" class="quiet" type="button">Import style</button></div>
+    <input id="style-file" type="file" accept=".json,application/json" hidden>
+    <p class="small">Style settings are saved on this device when browser storage is available. Game files and player details are never saved.</p>
+    </details>
+  </aside>
+  <section aria-label="Postcard workspace">
+    <div class="toolbar">
+      <div id="collection" class="field" hidden><label for="game">Game in collection</label><select id="game"></select></div>
+      <div class="toolbar-top"><label for="position">Board position <output id="move" for="position"></output></label><div class="actions"><button id="first" type="button" aria-label="First move">|‹</button><button id="previous" type="button" aria-label="Previous move">‹</button><button id="play" type="button" aria-pressed="false">Play</button><button id="next" type="button" aria-label="Next move">›</button><button id="last" type="button" aria-label="Last move">›|</button><input id="move-input" type="number" min="0" max="0" value="0" aria-label="Jump to move"></div></div>
+      <input id="position" type="range" min="0" max="0" value="0" aria-label="Board position">
+      <div id="branches" class="branches" hidden></div>
+    </div>
+    <div class="previews" aria-label="Image previews">
+    <figure>
+      <canvas id="full" role="img" aria-label="Complete board with game information"></canvas>
+      <figcaption><div><strong>The whole game</strong><small class="dimensions"></small></div><div class="actions"><button class="quiet" data-expand="full" type="button">Expand</button><button class="download" data-canvas="full" type="button">Download PNG</button></div></figcaption>
+    </figure>
+    <figure>
+      <canvas id="tilted" role="img" aria-label="Tilted board close-up with game information"></canvas>
+      <figcaption><div><strong>A closer look</strong><small class="dimensions"></small></div><div class="actions"><button class="quiet" data-expand="tilted" type="button">Expand</button><button class="download" data-canvas="tilted" type="button">Download PNG</button></div></figcaption>
+    </figure>
+    </div>
+    <p class="small">Drag the close-up to reframe it. Use ← / → to move through the game; Shift jumps 10 moves, Home / End jumps to the first / last.</p>
+    <div class="export-bar"><span class="small" id="export-note"></span><button id="download-both" class="download" type="button">Download both · ZIP</button></div>
+  </section>
+  </div>
+  <footer>
+    Captures, setup stones, passes, rectangular boards, and variations are supported. The first variation is selected initially. Results come from your SGF or edited details; this tool does not estimate territory or remove marked dead stones.
+    Visual style inspired by <a href="https://github.com/AVAVT/gotstats" target="_blank" rel="noopener noreferrer">GotStats Year in Review</a>.
+  </footer>
+</main>
+<dialog id="preview-dialog" aria-label="Large postcard preview"><div class="actions"><strong id="preview-title">Postcard preview</strong><button id="close-preview" type="button">Close</button></div><canvas id="large-preview" role="img" aria-label="Large postcard preview"></canvas></dialog>
+<script>
+'use strict';
+// Single-file, offline editor. Canvas drawing and SGF replay use no libraries.
+const $ = id => document.getElementById(id);
+const value = (node, key) => node?.[key]?.[0] || '';
+const clean = text => String(text).replace(/\s+/g, ' ').trim();
+const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+let games = [], current = null, selectedIndex = 0, choices = [], fileName = 'example';
+let loadRequest = 0, renderFrame = 0, playback = 0, exporting = false;
+const cache = new Map(), STYLE_KEY = 'sgf-postcards-style-v2';
+const PRESETS = {
+  gold: ['#efc225', '#25252f', '#30303d', '#15151e', '#25252f', '#efc225', '#f8f8ff', '#b3b3c1', 'outlined'],
+  jade: ['#76d6b3', '#172c29', '#26403b', '#10221e', '#172c29', '#76d6b3', '#effbf4', '#a4c1b5', 'outlined'],
+  sakura: ['#f2a6c3', '#302331', '#483245', '#211721', '#302331', '#f2a6c3', '#fff1f7', '#c9aebd', 'outlined'],
+  ice: ['#86c7ef', '#1c2938', '#2d4055', '#111c29', '#1c2938', '#86c7ef', '#f0f7ff', '#aac0d2', 'outlined'],
+  paper: ['#766445', '#f3efdf', '#e7e0c9', '#b9ad8e', '#262722', '#fffdf5', '#292c27', '#726f60', 'flat'],
+  classic: ['#694b27', '#d4ae71', '#e9cc92', '#9a783f', '#17181c', '#fffaf0', '#2e281d', '#665438', 'shaded'],
+};
+const COLOR_KEYS = ['accent', 'background', 'panel', 'gridColor', 'black', 'white', 'text', 'muted'];
+const SCHEMA = {
+  preset: { group:'theme', label:'Theme preset', type:'select', default:'gold', options:[['gold','Midnight gold'],['jade','Jade'],['sakura','Sakura'],['ice','Glacier'],['paper','Paper'],['classic','Classic board'],['custom','Custom']] },
+  accent: { group:'theme', label:'Accent / outline', type:'color', default:'#efc225' },
+  background: { group:'theme', label:'Background', type:'color', default:'#25252f' },
+  panel: { group:'theme', label:'Gradient end', type:'color', default:'#30303d' },
+  gridColor: { group:'theme', label:'Grid lines', type:'color', default:'#15151e' },
+  black: { group:'theme', label:'Black stones', type:'color', default:'#25252f' },
+  white: { group:'theme', label:'White stones', type:'color', default:'#efc225' },
+  text: { group:'theme', label:'Heading text', type:'color', default:'#f8f8ff' },
+  muted: { group:'theme', label:'Detail text', type:'color', default:'#b3b3c1' },
+  stoneStyle: { group:'theme', label:'Stone style', type:'select', default:'outlined', options:[['outlined','Outlined Black / solid White'],['flat','Both solid'],['rings','Both outlined'],['shaded','Shaded stones']] },
+  gradient: { group:'theme', label:'Gradient background', type:'checkbox', default:true },
+  coordinates: { group:'board', label:'Coordinates', type:'checkbox', default:false },
+  stars: { group:'board', label:'Star points', type:'checkbox', default:true },
+  grid: { group:'board', label:'Show grid', type:'checkbox', default:true },
+  gridOpacity: { group:'board', label:'Grid opacity', type:'range', default:55, min:0, max:100, step:1, unit:'%' },
+  stoneSize: { group:'board', label:'Stone size', type:'range', default:42, min:30, max:49, step:1, unit:'%' },
+  outline: { group:'board', label:'Outline thickness', type:'range', default:5, min:1, max:12, step:1, unit:'%' },
+  numbers: { group:'board', label:'Move numbers', type:'select', default:'none', options:[['none','None'],['last10','Last 10 surviving moves'],['all','All surviving moves']] },
+  lastMove: { group:'board', label:'Mark the last move', type:'checkbox', default:false },
+  rotation: { group:'board', label:'Board rotation', type:'select', default:'0', options:[['0','0°'],['90','90° clockwise'],['180','180°'],['270','270° clockwise']] },
+  mirror: { group:'board', label:'Mirror board', type:'checkbox', default:false },
+  angle: { group:'crop', label:'Close-up tilt', type:'range', default:9, min:-45, max:45, step:1, unit:'°' },
+  zoom: { group:'crop', label:'Close-up zoom', type:'range', default:135, min:100, max:220, step:1, unit:'%' },
+  panX: { group:'crop', label:'Horizontal position', type:'range', default:0, min:-50, max:50, step:1, unit:'%' },
+  panY: { group:'crop', label:'Vertical position', type:'range', default:0, min:-50, max:50, step:1, unit:'%' },
+  aspect: { group:'layout', label:'Image shape', type:'select', default:'auto', options:[['auto','Board + fitted footer'],['square','Square · 1:1'],['portrait','Portrait · 4:5'],['tall','Portrait · 2:3']] },
+  footer: { group:'layout', label:'Game information', type:'select', default:'detailed', options:[['detailed','Detailed footer'],['compact','Compact footer'],['none','Board only']] },
+  font: { group:'layout', label:'Typeface', type:'select', default:'sans', options:[['sans','System sans serif'],['serif','Serif'],['mono','Monospace']] },
+  fontScale: { group:'layout', label:'Text size', type:'range', default:100, min:80, max:140, step:5, unit:'%' },
+  align: { group:'layout', label:'Text alignment', type:'select', default:'left', options:[['left','Left'],['center','Centered']] },
+  positionLabel: { group:'layout', label:'Show position / move count', type:'checkbox', default:true },
+  margin: { group:'layout', label:'Frame margin', type:'range', default:32, min:0, max:100, step:2, unit:' px' },
+  radius: { group:'layout', label:'Corner radius', type:'range', default:40, min:0, max:100, step:2, unit:' px' },
+  border: { group:'layout', label:'Frame border', type:'checkbox', default:true },
+  transparent: { group:'export', label:'Transparent background', type:'checkbox', default:false },
+  resolution: { group:'export', label:'Export width', type:'select', default:'1600', options:[['1200','1200 px'],['1600','1600 px'],['2400','2400 px'],['3200','3200 px']] },
+  format: { group:'export', label:'Image format', type:'select', default:'png', options:[['png','PNG · lossless'],['jpeg','JPEG · smaller files'],['webp','WebP']] },
+  quality: { group:'export', label:'JPEG / WebP quality', type:'range', default:94, min:50, max:100, step:1, unit:'%' },
+};
+const DEFAULTS = Object.fromEntries(Object.entries(SCHEMA).map(([key, spec]) => [key, spec.default]));
+let settings = { ...DEFAULTS };
+const INFO_FIELDS = { GN:'Title', PB:'Black player', BR:'Black rank', PW:'White player', WR:'White rank', RE:'Recorded result', DT:'Date', KM:'Komi', HA:'Handicap', RU:'Rules', EV:'Event', RO:'Round', PC:'Place / server', TM:'Time limit (seconds)', OT:'Overtime', caption:'Personal caption' };
+const metadata = {};
+
+function validateSettings(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid style settings.');
+  const result = { ...DEFAULTS };
+  for (const [key, spec] of Object.entries(SCHEMA)) {
+    const val = input[key];
+    if (spec.type === 'checkbox' && typeof val === 'boolean') result[key] = val;
+    if (spec.type === 'color' && typeof val === 'string' && /^#[0-9a-f]{6}$/i.test(val)) result[key] = val;
+    if (spec.type === 'select' && spec.options.some(([value]) => value === val)) result[key] = val;
+    if (spec.type === 'range' && typeof val === 'number' && Number.isFinite(val)) result[key] = clamp(Math.round(val / spec.step) * spec.step, spec.min, spec.max);
+  }
+  return result;
+}
+function saveSettings() {
+  try { localStorage.setItem(STYLE_KEY, JSON.stringify({ version:1, settings })); } catch { /* Offline file storage can be disabled. */ }
+}
+function syncSettings() {
+  for (const [key, spec] of Object.entries(SCHEMA)) {
+    if (spec.type === 'checkbox') $(key).checked = settings[key]; else $(key).value = settings[key];
+    if (spec.type === 'range') $(`${key}-value`).textContent = settings[key] + (spec.unit || '');
+  }
+}
+function createControls() {
+  const colors = document.createElement('div'); colors.className = 'color-fields';
+  for (const [key, spec] of Object.entries(SCHEMA)) {
+    const field = document.createElement('div'), label = document.createElement('label');
+    field.className = 'field' + (spec.type === 'checkbox' ? ' check' : ''); label.htmlFor = key; label.textContent = spec.label;
+    const input = document.createElement(spec.type === 'select' ? 'select' : 'input');
+    input.id = key; input.dataset.setting = key;
+    if (spec.type === 'select') for (const [val, text] of spec.options) { const option = new Option(text, val); input.append(option); }
+    else input.type = spec.type;
+    if (spec.type === 'range') {
+      Object.assign(input, { min:spec.min, max:spec.max, step:spec.step });
+      const output = document.createElement('output'); output.id = `${key}-value`; output.htmlFor = key; label.append(output);
+    }
+    if (spec.type === 'checkbox' || spec.type === 'color') { label.prepend(input); field.append(label); }
+    else field.append(label, input);
+    if (spec.type === 'color') { colors.append(field); if (!colors.parentElement) $('theme-fields').append(colors); }
+    else $(`${spec.group}-fields`).append(field);
+  }
+  const reset = document.createElement('button'); reset.id = 'reset-crop'; reset.type = 'button'; reset.className = 'quiet'; reset.textContent = 'Reset close-up'; $('crop-fields').append(reset);
+  for (const [key, title] of Object.entries(INFO_FIELDS)) {
+    const field = document.createElement('div'), label = document.createElement('label'), input = document.createElement('input');
+    field.className = 'field'; label.htmlFor = `info-${key}`; label.textContent = title;
+    input.id = `info-${key}`; input.type = 'text'; input.maxLength = 200; input.dataset.info = key; input.placeholder = key === 'caption' ? 'Optional caption / credit' : 'Not recorded';
+    field.append(label, input); $('info-fields').append(field);
+  }
+}
+
+// Parse SGF grammar, including escaped brackets and nested variations. A regex
+// over B/W properties would also read moves inside comments and side branches.
+function parseSGF(text) {
+  let i = 0, nodes = 0;
+  const roots = [], stack = [];
+  const skip = () => { while (i < text.length && /\s|\uFEFF/.test(text[i])) i++; };
+  const fail = message => { throw new Error(`${message} (character ${i + 1}).`); };
+  while (i < text.length) {
+    skip();
+    if (i === text.length) break;
+    const char = text[i++], tree = stack[stack.length - 1];
+    if (char === '(') {
+      const next = { sequence: [], children: [] };
+      if (tree && !tree.sequence.length) fail('A variation needs a preceding node');
+      (tree ? tree.children : roots).push(next);
+      stack.push(next);
+    } else if (char === ')') {
+      if (!tree?.sequence.length) fail('Unexpected closing parenthesis');
+      stack.pop();
+    } else if (char === ';') {
+      if (!tree || tree.children.length) fail('Unexpected node');
+      if (++nodes > 100000) fail('This SGF contains too many nodes');
+      const node = Object.create(null);
+      tree.sequence.push(node);
+      skip();
+      while (i < text.length && /[A-Za-z]/.test(text[i])) {
+        let key = '';
+        while (i < text.length && /[A-Za-z]/.test(text[i])) key += text[i++];
+        key = key.toUpperCase();
+        skip();
+        if (text[i] !== '[' || node[key]) fail(`Invalid or repeated ${key} property`);
+        node[key] = [];
+        while (text[i] === '[') {
+          i++;
+          let content = '', closed = false;
+          while (i < text.length) {
+            const c = text[i++];
+            if (c === ']') { closed = true; break; }
+            if (c === '\\') {
+              if (i >= text.length) fail('Unfinished escape');
+              const escaped = text[i++];
+              if (escaped === '\r' || escaped === '\n') {
+                if (escaped === '\r' && text[i] === '\n') i++;
+              } else content += escaped;
+            } else content += c;
+          }
+          if (!closed) fail('Unclosed property value');
+          node[key].push(content);
+          skip();
+        }
+      }
+    } else fail('Expected an SGF game tree');
+  }
+  if (stack.length || !roots.length) fail('Incomplete or empty SGF');
+  return roots;
+}
+
+
+function replay(game, target) {
+  const { width, height } = game, board = new Uint8Array(width * height), placed = new Uint32Array(width * height);
+  let played = 0, last = null;
+  const coordinate = char => 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'.indexOf(char);
+  const point = text => {
+    const x = coordinate(text[0]), y = coordinate(text[1]);
+    if (text.length !== 2 || x < 0 || y < 0 || x >= width || y >= height) throw new Error(`Invalid board point: ${text || '(empty)'}.`);
+    return y * width + x;
+  };
+  const neighbors = p => {
+    const x = p % width, y = Math.floor(p / width), out = [];
+    if (x) out.push(p - 1);
+    if (x + 1 < width) out.push(p + 1);
+    if (y) out.push(p - width);
+    if (y + 1 < height) out.push(p + width);
+    return out;
+  };
+  const group = start => {
+    const stones = new Set([start]), pending = [start], color = board[start];
+    let liberty = false;
+    while (pending.length) {
+      for (const p of neighbors(pending.pop())) {
+        if (!board[p]) liberty = true;
+        else if (board[p] === color && !stones.has(p)) { stones.add(p); pending.push(p); }
+      }
+    }
+    return { stones, liberty };
+  };
+  for (const node of game.path) {
+    const color = node.B ? 1 : node.W ? 2 : 0;
+    if (node.B && node.W) throw new Error('A node cannot contain both a Black and a White move.');
+    if (color && played === target) break;
+    for (const [key, stone] of [['AE', 0], ['AB', 1], ['AW', 2]]) {
+      for (let text of node[key] || []) {
+        text = text.replace(/\s/g, '');
+        const range = text.split(':');
+        if (range.length > 2) throw new Error('Invalid setup range.');
+        const first = point(range[0]), last = point(range[1] ?? range[0]);
+        const x0 = first % width, y0 = Math.floor(first / width), x1 = last % width, y1 = Math.floor(last / width);
+        if (x1 < x0 || y1 < y0) throw new Error('Reversed setup range.');
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { board[y * width + x] = stone; placed[y * width + x] = 0; }
+      }
+    }
+    if (!color) continue;
+    played++; last = null;
+    if ((node.B || node.W).length !== 1) throw new Error(`Move ${played} has multiple points.`);
+    const text = (node.B || node.W)[0].replace(/\s/g, '');
+    // FF[3] and older used tt for a pass on boards up to 19×19.
+    if (!text || (text === 'tt' && width <= 19 && height <= 19)) continue;
+    const p = point(text);
+    if (board[p]) throw new Error(`Move ${played} places a stone on an occupied point.`);
+    board[p] = color; placed[p] = played; last = p;
+    for (const neighbor of neighbors(p)) {
+      if (board[neighbor] && board[neighbor] !== color) {
+        const captured = group(neighbor);
+        if (!captured.liberty) for (const stone of captured.stones) { board[stone] = 0; placed[stone] = 0; }
+      }
+    }
+    // Preserve records using rules that allow self-capture.
+    const own = group(p);
+    if (!own.liberty) for (const stone of own.stones) { board[stone] = 0; placed[stone] = 0; }
+  }
+  board.placed = placed; board.last = last; board.target = target;
+  return board;
+}
+
+
+const fontFamily = () => ({ sans:'system-ui, sans-serif', serif:'Georgia, serif', mono:'ui-monospace, monospace' }[settings.font]);
+const font = (size, weight = 400) => `${weight} ${size}px ${fontFamily()}`;
+function wrap(ctx, text, width, limit = 8) {
+  // Prefer word boundaries, but split long names and CJK text when needed.
+  const lines = []; let line = '';
+  const tokens = clean(text).match(/\S+\s*/gu) || [];
+  for (const token of tokens) {
+    if (ctx.measureText(line + token.trimEnd()).width <= width) { line += token; continue; }
+    if (line.trim()) { lines.push(line.trim()); line = ''; }
+    for (const char of Array.from(token)) {
+      if (line && ctx.measureText(line + char).width > width) { lines.push(line.trim()); line = ''; }
+      line += char;
+    }
+  }
+  if (line.trim()) lines.push(line.trim());
+  if (lines.length > limit) {
+    lines.length = limit;
+    let end = lines[limit - 1];
+    while (ctx.measureText(end + '…').width > width) end = Array.from(end).slice(0, -1).join('');
+    lines[limit - 1] = end + '…';
+  }
+  return lines;
+}
+function information(game, target) {
+  const get = key => clean(Object.hasOwn(metadata, key) ? metadata[key] : value(game.root, key)).slice(0, 200);
+  const player = (name, rank, fallback) => [get(name) || fallback, get(rank)].filter(Boolean).join(' · ');
+  const details = [get('DT'), `${game.width} × ${game.height}`, get('KM') ? `Komi ${get('KM')}` : '', Number(get('HA')) > 0 ? `Handicap ${get('HA')}` : '', get('RU') ? `${get('RU')} rules` : ''].filter(Boolean).join('  ·  ');
+  const event = [get('EV') !== get('GN') ? get('EV') : '', get('RO') ? `Round ${get('RO')}` : '', get('PC')].filter(Boolean).join('  ·  ');
+  const timing = [get('TM') ? `Time limit ${get('TM')}s` : '', get('OT')].filter(Boolean).join('  ·  ');
+  const result = get('RE') ? `Result: ${get('RE')}${game.isVariation ? ' (recorded game result)' : target < game.total ? ' (recorded final result)' : ''}` : '';
+  return {
+    title:get('GN') || get('EV') || 'A game of Go',
+    black:player('PB', 'BR', 'Black'), white:player('PW', 'WR', 'White'),
+    position:target === game.total ? `${game.isVariation ? 'VARIATION END' : 'FINAL POSITION'} · ${game.total} MOVES` : `POSITION AT MOVE ${target} OF ${game.total}${game.isVariation ? ' · VARIATION' : ''}`,
+    facts:(settings.footer === 'compact' ? [result, [get('DT'), `${game.width} × ${game.height}`].filter(Boolean).join(' · ')] : [result, details, event, timing]).filter(Boolean),
+    caption:get('caption'),
+  };
+}
+function footerLayout(ctx, info) {
+  if (settings.footer === 'none') return { height:0, blocks:[] };
+  const f = settings.fontScale / 100, center = settings.align === 'center';
+  const blocks = []; let y = 28 * f;
+  const add = (text, size, weight, color, maxLines, gap = 16) => {
+    if (!text) return;
+    ctx.font = font(size * f, weight);
+    const lines = wrap(ctx, text, 1440, maxLines);
+    blocks.push({ lines, y, size:size * f, weight, color });
+    y += lines.length * size * f * 1.35 + gap * f;
+  };
+  if (settings.positionLabel) add(info.position, 22, 650, settings.accent, 2, 20);
+  add(info.title, 48, 650, settings.text, 3, 24);
+  ctx.font = font(34 * f);
+  const playerWidth = 700 - 46 * f;
+  const black = wrap(ctx, info.black, playerWidth, 3), white = wrap(ctx, info.white, playerWidth, 3);
+  const players = { y, black, white, center, fontSize:34 * f, lineHeight:46 * f };
+  y += Math.max(black.length, white.length) * players.lineHeight + 20 * f;
+  ctx.font = font(27 * f);
+  const facts = info.facts.map(text => {
+    const lines = wrap(ctx, text, 700, 4);
+    return { lines, height:lines.length * 27 * f * 1.35 + 4 * f };
+  });
+  // Keep reading order while balancing the wrapped content between both columns.
+  let split = facts.length, balance = Infinity;
+  for (let i = 1; i < facts.length; i++) {
+    const left = facts.slice(0, i).reduce((sum, fact) => sum + fact.height, 0);
+    const right = facts.slice(i).reduce((sum, fact) => sum + fact.height, 0);
+    if (Math.abs(left - right) < balance) { split = i; balance = Math.abs(left - right); }
+  }
+  const columns = [facts.slice(0, split), facts.slice(split)];
+  const columnEnds = columns.map((column, index) => {
+    let cursor = y;
+    for (const fact of column) {
+      blocks.push({ lines:fact.lines, x:80 + index * 740 + (center ? 350 : 0), y:cursor, size:27 * f, weight:400, color:settings.muted });
+      cursor += fact.height;
+    }
+    return cursor;
+  });
+  y = Math.max(...columnEnds);
+  if (info.caption) { y += 12 * f; add(info.caption, 29, 450, settings.text, 3, 0); }
+  return { height:Math.ceil(y + 32 * f), blocks, players };
+}
+function mix(hex, other, amount) {
+  const a = hex.match(/\w\w/g).map(n => parseInt(n, 16)), b = other.match(/\w\w/g).map(n => parseInt(n, 16));
+  return '#' + a.map((n, i) => Math.round(n * (1 - amount) + b[i] * amount).toString(16).padStart(2, '0')).join('');
+}
+function contrast(hex) {
+  const rgb = hex.match(/\w\w/g).map(n => parseInt(n, 16) / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
+  return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2] > .3 ? '#15151b' : '#ffffff';
+}
+function contrastRatio(first, second) {
+  const luminance = hex => {
+    const rgb = hex.match(/\w\w/g).map(n => parseInt(n, 16) / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
+    return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
+  };
+  const a = luminance(first), b = luminance(second);
+  return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+}
+function stone(ctx, x, y, radius, color, lineWidth) {
+  const fill = color === 1 ? settings.black : settings.white;
+  const outlined = settings.stoneStyle === 'rings' || (settings.stoneStyle === 'outlined' && color === 1);
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
+  if (settings.stoneStyle === 'shaded') {
+    const gradient = ctx.createRadialGradient(x - radius * .35, y - radius * .4, radius * .05, x, y, radius);
+    gradient.addColorStop(0, mix(fill, '#ffffff', .32)); gradient.addColorStop(.6, fill); gradient.addColorStop(1, mix(fill, '#000000', .28));
+    ctx.fillStyle = gradient;
+  } else ctx.fillStyle = settings.stoneStyle === 'rings' ? settings.background : fill;
+  ctx.fill();
+  const needsEdge = Math.min(contrastRatio(fill, settings.background), contrastRatio(fill, settings.gradient ? settings.panel : settings.background)) < 1.6;
+  if (outlined || needsEdge) {
+    let edge = outlined ? (color === 1 ? settings.accent : settings.white) : settings.accent;
+    if (Math.min(contrastRatio(edge, settings.background), contrastRatio(edge, settings.gradient ? settings.panel : settings.background)) < 1.6) edge = contrast(fill);
+    ctx.strokeStyle = edge; ctx.lineWidth = Math.max(lineWidth, radius * .045); ctx.stroke();
+  }
+  return settings.stoneStyle === 'rings' ? settings.background : fill;
+}
+function orientation(game, x, y) {
+  const w = game.width, h = game.height;
+  let point = settings.rotation === '90' ? [h - 1 - y, x] : settings.rotation === '180' ? [w - 1 - x, h - 1 - y] : settings.rotation === '270' ? [y, w - 1 - x] : [x, y];
+  const width = ['90','270'].includes(settings.rotation) ? h : w;
+  if (settings.mirror) point[0] = width - 1 - point[0];
+  return point;
+}
+function drawBoard(ctx, game, board) {
+  const rotated = ['90','270'].includes(settings.rotation), width = rotated ? game.height : game.width, height = rotated ? game.width : game.height;
+  const span = Math.max(width - 1, height - 1);
+  const edge = settings.coordinates ? .95 : settings.stoneSize / 100 + settings.outline / 200 + .08;
+  const spacing = Math.min((settings.coordinates ? 1330 : 1420) / span, 1500 / (span + 2 * edge));
+  const left = (1600 - (width - 1) * spacing) / 2, top = (1600 - (height - 1) * spacing) / 2;
+  const at = (x, y) => { const [a, b] = orientation(game, x, y); return [left + a * spacing, top + b * spacing]; };
+  ctx.save(); ctx.globalAlpha = settings.gridOpacity / 100;
+  ctx.strokeStyle = settings.gridColor; ctx.fillStyle = settings.gridColor; ctx.lineWidth = 3;
+  if (settings.grid) {
+    ctx.beginPath();
+    for (let x = 0; x < width; x++) { ctx.moveTo(left + x * spacing, top); ctx.lineTo(left + x * spacing, top + (height - 1) * spacing); }
+    for (let y = 0; y < height; y++) { ctx.moveTo(left, top + y * spacing); ctx.lineTo(left + (width - 1) * spacing, top + y * spacing); }
+    ctx.stroke();
+  }
+  const stars = game.width !== game.height ? [] : game.width === 19 ? [[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]] : game.width === 13 ? [[3,3],[3,9],[6,6],[9,3],[9,9]] : game.width === 9 ? [[2,2],[2,6],[4,4],[6,2],[6,6]] : [];
+  if (settings.stars) for (const [x, y] of stars) { const p = at(x, y); ctx.beginPath(); ctx.arc(...p, spacing * .1, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  if (settings.coordinates) {
+    ctx.font = font(Math.min(30, spacing * .36), 550); ctx.fillStyle = settings.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const letters = 'ABCDEFGHJKLMNOPQRSTUVWXYZ';
+    for (let x = 0; x < game.width; x++) for (const y of [-.85, game.height - .15]) ctx.fillText(letters[x] || String(x + 1), ...at(x, y));
+    for (let y = 0; y < game.height; y++) for (const x of [-.85, game.width - .15]) ctx.fillText(String(game.height - y), ...at(x, y));
+  }
+  board.forEach((color, i) => {
+    if (!color) return;
+    const [x, y] = at(i % game.width, Math.floor(i / game.width)), radius = spacing * settings.stoneSize / 100;
+    const fill = stone(ctx, x, y, radius, color, spacing * settings.outline / 100);
+    const number = board.placed[i];
+    if (number && (settings.numbers === 'all' || (settings.numbers === 'last10' && number > board.target - 10))) {
+      ctx.font = font(radius * (number >= 1000 ? .68 : number >= 100 ? .85 : 1.05), 650);
+      ctx.fillStyle = contrast(fill); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(number, x, y + radius * .04);
+    } else if (settings.lastMove && board.last === i) {
+      ctx.beginPath(); ctx.arc(x, y, radius * .35, 0, Math.PI * 2); ctx.strokeStyle = contrast(fill); ctx.lineWidth = Math.max(2, spacing * .055); ctx.stroke();
+    }
+  });
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+function drawFooter(ctx, info, layout, base) {
+  if (!layout.height) return;
+  ctx.textBaseline = 'top';
+  const centered = settings.align === 'center'; ctx.textAlign = centered ? 'center' : 'left';
+  for (const block of layout.blocks) {
+    ctx.font = font(block.size, block.weight); ctx.fillStyle = block.color;
+    block.lines.forEach((line, i) => ctx.fillText(line, block.x ?? (centered ? 800 : 80), base + block.y + i * block.size * 1.35));
+  }
+  const p = layout.players; ctx.font = font(p.fontSize);
+  const iconRadius = p.fontSize * 14 / 34, iconGap = p.fontSize * 46 / 34;
+  for (const [lines, x, color] of [[p.black, 80, 1], [p.white, 820, 2]]) {
+    if (centered) {
+      const lineWidth = ctx.measureText(lines[0]).width, start = x + (700 - lineWidth - iconGap) / 2;
+      stone(ctx, start + iconRadius, base + p.y + p.fontSize * 19 / 34, iconRadius, color, 2);
+      lines.forEach((line, i) => { ctx.fillStyle = settings.text; ctx.fillText(line, i ? x + 350 : start + iconGap + lineWidth / 2, base + p.y + i * p.lineHeight); });
+    } else {
+      stone(ctx, x + iconRadius, base + p.y + p.fontSize * 19 / 34, iconRadius, color, 2);
+      lines.forEach((line, i) => { ctx.fillStyle = settings.text; ctx.fillText(line, x + iconGap, base + p.y + i * p.lineHeight); });
+    }
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+function scene() {
+  if (!current) throw new Error('Load an SGF first.');
+  const target = Number($('position').value);
+  let board = cache.get(target);
+  if (!board) { board = replay(current, target); cache.set(target, board); if (cache.size > 64) cache.delete(cache.keys().next().value); }
+  const info = information(current, target), measure = document.createElement('canvas').getContext('2d'), layout = footerLayout(measure, info);
+  const fixed = { square:1600, portrait:2000, tall:2400 }[settings.aspect];
+  // Reserve a readable board even with unusually long details. Fixed aspect
+  // layouts scale the footer as a block rather than dropping or clipping text.
+  const footerScale = fixed ? Math.min(1, fixed * .42 / Math.max(1, layout.height)) : 1;
+  const footerHeight = layout.height * footerScale;
+  const height = fixed || 1600 + footerHeight, boardHeight = height - footerHeight;
+  return { game:current, board, info, layout, footerScale, height, boardHeight };
+}
+function renderImage(canvas, tilted, data, width = 900, flatten = false) {
+  const { game, board, info, layout, footerScale, height, boardHeight } = data;
+  canvas.width = width; canvas.height = Math.round(height * width / 1600);
+  const ctx = canvas.getContext('2d'); ctx.scale(width / 1600, width / 1600);
+  if (!settings.transparent || flatten) { ctx.fillStyle = settings.background; ctx.fillRect(0, 0, 1600, height); }
+  const margin = settings.margin, rect = [margin, margin, 1600 - margin * 2, boardHeight - margin * 2];
+  const radius = Math.min(settings.radius, rect[3] / 2), boardScale = Math.min(rect[2], rect[3]) / 1536;
+  ctx.save(); ctx.beginPath(); ctx.roundRect(...rect, radius); ctx.clip();
+  if (!settings.transparent || flatten) {
+    const gradient = ctx.createLinearGradient(0, 0, 1600, boardHeight);
+    gradient.addColorStop(0, settings.background); gradient.addColorStop(1, settings.gradient ? settings.panel : settings.background);
+    ctx.fillStyle = gradient; ctx.fillRect(...rect);
+  }
+  ctx.translate(800, boardHeight / 2);
+  if (tilted) { ctx.translate(settings.panX / 100 * rect[2], settings.panY / 100 * rect[3]); ctx.rotate(settings.angle * Math.PI / 180); ctx.scale(settings.zoom / 100, settings.zoom / 100); }
+  ctx.scale(boardScale, boardScale); ctx.translate(-800, -800); drawBoard(ctx, game, board); ctx.restore();
+  if (settings.border) { ctx.strokeStyle = mix(settings.background, settings.text, .13); ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(...rect, radius); ctx.stroke(); }
+  ctx.save(); ctx.translate((1600 - 1600 * footerScale) / 2, boardHeight); ctx.scale(footerScale, footerScale); drawFooter(ctx, info, layout, 0); ctx.restore();
+  canvas.setAttribute('aria-label', `${tilted ? 'Tilted close-up' : 'Complete board'}: ${info.title}. Black: ${info.black}. White: ${info.white}. ${info.position}. ${info.facts.join('. ')}${info.caption ? '. ' + info.caption : ''}`);
+  return canvas;
+}
+
+function prepare(tree, selections = []) {
+  const root = tree.sequence[0];
+  if (root.GM && value(root, 'GM') !== '1') throw new Error('This file is not a Go game (GM[1]).');
+  const size = value(root, 'SZ') || '19';
+  if (!/^\d+(?::\d+)?$/.test(size)) throw new Error('Invalid board size.');
+  const dimensions = size.split(':').map(Number), width = dimensions[0], height = dimensions[1] ?? width;
+  if ([width, height].some(n => n < 2 || n > 52)) throw new Error('Board dimensions must be between 2 and 52.');
+  const path = [], branches = []; let total = 0, depth = 0, isVariation = false;
+  for (let branch = tree; branch;) {
+    for (const node of branch.sequence) { path.push(node); if (node.B || node.W) total++; }
+    const index = clamp(Number.isInteger(selections[depth]) ? selections[depth] : 0, 0, Math.max(0, branch.children.length - 1));
+    if (index > 0) isVariation = true;
+    if (branch.children.length > 1) branches.push({ tree:branch, depth, move:total, selected:index });
+    if (branch.children.length > 1) depth++;
+    branch = branch.children[index];
+  }
+  return { root, width, height, path, total, branches, isVariation };
+}
+function report(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
+function render() {
+  if (!current) return;
+  try {
+    const data = scene(), target = Number($('position').value);
+    $('move').textContent = target === current.total ? `Final · ${target} moves` : `Move ${target} / ${current.total}`;
+    $('move-input').value = target;
+    $('first').disabled = $('previous').disabled = exporting || target === 0;
+    $('next').disabled = $('last').disabled = exporting || target === current.total;
+    $('play').disabled = exporting || current.total === 0;
+    renderImage($('full'), false, data); renderImage($('tilted'), true, data);
+    document.querySelectorAll('.dimensions').forEach(el => { el.textContent = `${settings.resolution} × ${Math.round(data.height * Number(settings.resolution) / 1600)} px · ${settings.format.toUpperCase()}`; });
+    document.querySelectorAll('[data-canvas]').forEach(button => { button.textContent = `Download ${settings.format.toUpperCase()}`; });
+    $('export-note').textContent = settings.transparent && settings.format === 'jpeg' ? 'JPEG uses your background color; choose PNG or WebP for transparency.' : 'Both images use the current position and your chosen game details.';
+  } catch (error) { report(error.message, true); }
+}
+function scheduleRender() {
+  if (!renderFrame) renderFrame = requestAnimationFrame(() => { renderFrame = 0; render(); });
+}
+function stopPlayback() {
+  clearInterval(playback); playback = 0; $('play').textContent = 'Play'; $('play').setAttribute('aria-pressed', 'false');
+}
+function setMove(n, stop = true) {
+  if (!current || exporting) return;
+  if (stop) stopPlayback();
+  $('position').value = clamp(Math.round(Number(n) || 0), 0, current.total); scheduleRender();
+}
+function restoreMetadata() {
+  for (const key of Object.keys(INFO_FIELDS)) { metadata[key] = key === 'caption' ? '' : clean(value(current.root, key)).slice(0, 200); $(`info-${key}`).value = metadata[key]; }
+}
+function renderBranches() {
+  const rows = current.branches.slice(0, 40).map(branch => {
+    const field = document.createElement('div'), label = document.createElement('label'), select = document.createElement('select');
+    field.className = 'field'; select.id = `branch-${branch.depth}`; label.htmlFor = select.id; label.textContent = `Variation after move ${branch.move}`;
+    branch.tree.children.forEach((child, i) => {
+      const first = child.sequence.find(node => node.B || node.W) || child.sequence[0];
+      const move = first.B ? 'Black' : first.W ? 'White' : 'Setup';
+      const name = value(child.sequence[0], 'N') || value(child.sequence[0], 'GN') || move;
+      select.add(new Option(`${i + 1}. ${clean(name).slice(0, 70)}${i === 0 ? ' · first variation' : ''}`, String(i)));
+    });
+    select.value = String(branch.selected);
+    select.addEventListener('change', () => {
+      const nextChoices = choices.slice(0, branch.depth); nextChoices[branch.depth] = Number(select.value);
+      try { selectGame(selectedIndex, nextChoices, false); report('Variation selected. Ready to export.'); }
+      catch (error) { renderBranches(); report(`${error.message} Previous position is unchanged.`, true); }
+    });
+    field.append(label, select); return field;
+  });
+  $('branches').replaceChildren(...rows); $('branches').hidden = !rows.length;
+}
+function selectGame(index, selections = [], restore = true) {
+  const next = prepare(games[index], selections), board = replay(next, next.total);
+  stopPlayback(); current = next; selectedIndex = index; choices = selections; cache.clear(); cache.set(next.total, board);
+  $('position').max = $('move-input').max = String(next.total); $('position').value = String(next.total);
+  if (restore) restoreMetadata();
+  renderBranches(); render();
+}
+function loadSGF(text, name, demo = false) {
+  if (new Blob([text]).size > 8 * 1024 * 1024) throw new Error('Please use an SGF smaller than 8 MB.');
+  const next = parseSGF(text), first = prepare(next[0]); replay(first, first.total);
+  games = next; fileName = name.replace(/\.[^.]*$/, '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').slice(0, 100) || 'game';
+  $('game').replaceChildren(...games.map((tree, i) => new Option(`${i + 1}. ${clean(value(tree.sequence[0], 'GN')) || [value(tree.sequence[0], 'PB') || 'Black', value(tree.sequence[0], 'PW') || 'White'].map(clean).join(' vs ')}`, String(i))));
+  $('collection').hidden = games.length < 2; selectGame(0);
+  report(demo ? 'Demo diagrams · choose or paste an SGF to use your own game.' : `${name} · ${games.length > 1 ? games.length + ' games · ' : ''}Ready to export.`);
+}
+async function loadFile(file) {
+  if (!file || exporting) return;
+  const request = ++loadRequest; report(`Reading ${file.name}…`);
+  try {
+    if (file.size > 8 * 1024 * 1024) throw new Error('Please choose an SGF smaller than 8 MB.');
+    const bytes = await file.arrayBuffer(); if (request !== loadRequest) return;
+    const view = new Uint8Array(bytes); let text;
+    if (view[0] === 255 && view[1] === 254) text = new TextDecoder('utf-16le').decode(bytes);
+    else if (view[0] === 254 && view[1] === 255) text = new TextDecoder('utf-16be').decode(bytes);
+    else { try { text = new TextDecoder('utf-8', { fatal:true }).decode(bytes); } catch { text = new TextDecoder('windows-1252').decode(bytes); } }
+    const charset = clean(value(parseSGF(text)[0].sequence[0], 'CA'));
+    if (charset && !(view[0] === 255 || view[0] === 254)) {
+      try { text = new TextDecoder(charset, { fatal:true }).decode(bytes); } catch { throw new Error(`Could not decode the SGF's ${charset} character encoding.`); }
+    }
+    loadSGF(text, file.name);
+  } catch (error) { report(`Could not load ${file.name}: ${error.message} Previous previews are unchanged.`, true); }
+}
+function applySettings(next, persist = true) { settings = validateSettings(next); syncSettings(); if (persist) saveSettings(); scheduleRender(); }
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = name; document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+const CRC_TABLE = Uint32Array.from({ length:256 }, (_, n) => { for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1; return n >>> 0; });
+function crc32(bytes) { let n = 0xffffffff; for (const byte of bytes) n = CRC_TABLE[(n ^ byte) & 255] ^ (n >>> 8); return (n ^ 0xffffffff) >>> 0; }
+// ZIP's uncompressed format keeps both images in one download without a CDN
+// library or browser permission for multiple simultaneous downloads.
+async function makeZip(files) {
+  const parts = [], directory = []; let offset = 0, directorySize = 0;
+  for (const file of files) {
+    const name = new TextEncoder().encode(file.name), bytes = new Uint8Array(await file.blob.arrayBuffer()), crc = crc32(bytes);
+    const local = new Uint8Array(30 + name.length), l = new DataView(local.buffer);
+    l.setUint32(0, 0x04034b50, true); l.setUint16(4, 20, true); l.setUint16(6, 0x800, true); l.setUint16(12, 33, true);
+    l.setUint32(14, crc, true); l.setUint32(18, bytes.length, true); l.setUint32(22, bytes.length, true); l.setUint16(26, name.length, true); local.set(name, 30);
+    const central = new Uint8Array(46 + name.length), c = new DataView(central.buffer);
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x800, true); c.setUint16(14, 33, true);
+    c.setUint32(16, crc, true); c.setUint32(20, bytes.length, true); c.setUint32(24, bytes.length, true); c.setUint16(28, name.length, true); c.setUint32(42, offset, true); central.set(name, 46);
+    parts.push(local, bytes); directory.push(central); offset += local.length + bytes.length; directorySize += central.length;
+  }
+  const end = new Uint8Array(22), e = new DataView(end.buffer);
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, directorySize, true); e.setUint32(16, offset, true);
+  return new Blob([...parts, ...directory, end], { type:'application/zip' });
+}
+function imageBlob(id, data) {
+  const mime = { png:'image/png', jpeg:'image/jpeg', webp:'image/webp' }[settings.format];
+  const canvas = renderImage(document.createElement('canvas'), id === 'tilted', data, Number(settings.resolution), settings.format === 'jpeg');
+  return new Promise((resolve, reject) => canvas.toBlob(blob => {
+    if (!blob) reject(new Error('Image export failed. Try a smaller export width.'));
+    else if (blob.type !== mime) reject(new Error('This browser cannot export that format. Choose PNG instead.'));
+    else resolve(blob);
+  }, mime, settings.quality / 100));
+}
+async function exportImages(ids) {
+  if (exporting) return;
+  stopPlayback(); exporting = true;
+  const controls = Array.from(document.querySelectorAll('button, input, select, textarea')).map(el => [el, el.disabled]);
+  controls.forEach(([el]) => { el.disabled = true; });
+  try {
+    const data = scene(), prefix = `${fileName}${games.length > 1 ? '-game-' + (selectedIndex + 1) : ''}-move-${data.board.target}`, ext = settings.format === 'jpeg' ? 'jpg' : settings.format;
+    report(`Preparing ${ids.length === 2 ? 'both images' : 'image'}…`);
+    const files = [];
+    for (const id of ids) { const blob = await imageBlob(id, data); files.push({ name:`${prefix}-${id}.${ext}`, blob }); }
+    if (files.length === 2) downloadBlob(await makeZip(files), `${prefix}-postcards.zip`); else downloadBlob(files[0].blob, files[0].name);
+    report('Download ready.');
+  } catch (error) { report(error.message, true); }
+  finally { exporting = false; controls.forEach(([el, wasDisabled]) => { el.disabled = wasDisabled; }); scheduleRender(); }
+}
+
+createControls();
+const narrowScreen = matchMedia('(max-width: 700px)');
+$('settings-panel').open = !narrowScreen.matches;
+narrowScreen.addEventListener('change', event => { $('settings-panel').open = !event.matches; });
+try { const saved = JSON.parse(localStorage.getItem(STYLE_KEY)); if (saved?.version === 1) settings = validateSettings(saved.settings); } catch { /* Use defaults when local settings are unavailable. */ }
+syncSettings();
+$('settings').addEventListener('input', event => {
+  const key = event.target.dataset.setting, info = event.target.dataset.info;
+  if (info) { metadata[info] = event.target.value; scheduleRender(); return; }
+  if (!key) return;
+  const spec = SCHEMA[key]; settings[key] = spec.type === 'checkbox' ? event.target.checked : spec.type === 'range' ? Number(event.target.value) : event.target.value;
+  if (key === 'preset' && PRESETS[settings.preset]) {
+    const palette = PRESETS[settings.preset]; COLOR_KEYS.forEach((name, i) => { settings[name] = palette[i]; }); settings.stoneStyle = palette[8]; settings.gradient = true;
+  } else if (COLOR_KEYS.includes(key) || key === 'stoneStyle') settings.preset = 'custom';
+  syncSettings(); saveSettings(); scheduleRender();
+});
+$('reset-crop').addEventListener('click', () => applySettings({ ...settings, angle:9, zoom:135, panX:0, panY:0 }));
+$('reset-style').addEventListener('click', () => applySettings(DEFAULTS));
+$('restore-info').addEventListener('click', () => { restoreMetadata(); scheduleRender(); });
+$('save-style').addEventListener('click', () => downloadBlob(new Blob([JSON.stringify({ version:1, settings }, null, 2)], { type:'application/json' }), 'sgf-postcards-style.json'));
+$('load-style').addEventListener('click', () => $('style-file').click());
+$('style-file').addEventListener('change', async event => {
+  const file = event.target.files[0]; if (!file) return;
+  try { if (file.size > 65536) throw new Error('Style file is too large.'); const imported = JSON.parse(await file.text()); if (imported.version !== 1) throw new Error('Unsupported style version.'); applySettings(imported.settings); report('Style imported.'); }
+  catch (error) { report(`Could not import style: ${error.message}`, true); }
+  event.target.value = '';
+});
+$('file').addEventListener('change', event => loadFile(event.target.files[0]));
+$('game').addEventListener('change', () => { try { selectGame(Number($('game').value)); report('Game selected.'); } catch (error) { $('game').value = String(selectedIndex); report(`${error.message} Previous previews are unchanged.`, true); } });
+$('paste-toggle').addEventListener('click', () => { const open = $('paste-panel').hidden; $('paste-panel').hidden = !open; $('paste-toggle').setAttribute('aria-expanded', String(open)); if (open) $('sgf-text').focus(); });
+$('load-text').addEventListener('click', () => { ++loadRequest; try { loadSGF($('sgf-text').value, 'pasted-game.sgf'); $('file').value = ''; } catch (error) { report(`${error.message} Previous previews are unchanged.`, true); } });
+const drop = $('drop');
+for (const name of ['dragenter','dragover']) drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('dragging'); });
+drop.addEventListener('dragleave', event => { if (!drop.contains(event.relatedTarget)) drop.classList.remove('dragging'); });
+drop.addEventListener('drop', event => { event.preventDefault(); drop.classList.remove('dragging'); loadFile(event.dataTransfer.files[0]); });
+$('position').addEventListener('input', () => setMove($('position').value));
+$('move-input').addEventListener('change', () => setMove($('move-input').value));
+for (const [id, target] of [['first',()=>0], ['previous',()=>Number($('position').value)-1], ['next',()=>Number($('position').value)+1], ['last',()=>current.total]]) $(id).addEventListener('click', () => setMove(target()));
+$('play').addEventListener('click', () => {
+  if (playback) { stopPlayback(); return; }
+  if (Number($('position').value) === current.total) setMove(0);
+  $('play').textContent = 'Pause'; $('play').setAttribute('aria-pressed', 'true');
+  playback = setInterval(() => { if (document.hidden || Number($('position').value) >= current.total) stopPlayback(); else setMove(Number($('position').value) + 1, false); }, 600);
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopPlayback(); });
+document.addEventListener('keydown', event => {
+  if (event.target.closest('input, textarea, select, button, summary') || $('preview-dialog').open || event.ctrlKey || event.metaKey || event.altKey) return;
+  const position = Number($('position').value), n = event.key === 'Home' ? 0 : event.key === 'End' ? current?.total : event.key === 'ArrowLeft' ? position - (event.shiftKey ? 10 : 1) : event.key === 'ArrowRight' ? position + (event.shiftKey ? 10 : 1) : null;
+  if (n !== null) { event.preventDefault(); setMove(n); }
+});
+let drag = null;
+$('tilted').addEventListener('pointerdown', event => {
+  if (event.button !== 0 || exporting) return;
+  const rect = $('tilted').getBoundingClientRect(), data = scene();
+  if ((event.clientY - rect.top) / rect.height > data.boardHeight / data.height) return;
+  drag = { x:event.clientX, y:event.clientY, panX:settings.panX, panY:settings.panY, width:rect.width, height:rect.height * data.boardHeight / data.height };
+  $('tilted').setPointerCapture(event.pointerId);
+});
+$('tilted').addEventListener('pointermove', event => {
+  if (!drag) return;
+  settings.panX = clamp(Math.round(drag.panX + (event.clientX - drag.x) / drag.width * 100), -50, 50);
+  settings.panY = clamp(Math.round(drag.panY + (event.clientY - drag.y) / drag.height * 100), -50, 50);
+  syncSettings(); scheduleRender();
+});
+for (const name of ['pointerup','pointercancel','lostpointercapture']) $('tilted').addEventListener(name, () => { if (drag) { drag = null; saveSettings(); } });
+document.querySelectorAll('[data-canvas]').forEach(button => button.addEventListener('click', () => exportImages([button.dataset.canvas])));
+$('download-both').addEventListener('click', () => exportImages(['full','tilted']));
+document.querySelectorAll('[data-expand]').forEach(button => button.addEventListener('click', () => { stopPlayback(); const id = button.dataset.expand; renderImage($('large-preview'), id === 'tilted', scene(), 1400); $('preview-title').textContent = id === 'tilted' ? 'A closer look' : 'The whole game'; $('preview-dialog').showModal(); }));
+$('close-preview').addEventListener('click', () => $('preview-dialog').close());
+$('preview-dialog').addEventListener('click', event => { if (event.target !== $('preview-dialog')) return; const rect = event.target.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.target.close(); });
+
+// A small setup diagram for an immediate preview; it is not a recorded game.
+function example() {
+  ++loadRequest;
+  $('file').value = '';
+  const rows = [
+    '.....Ooo....oOO....', '......Oo...o.OOOO..', '....OOoooooo.OOOO..',
+    '..O..OOoOOo..ooO...', '.......OOOo....oO..', '.......O.Oo...oOO..',
+    '.......Ooo.o.oooO..', '.O.O..oOoo......oO.', '..Oo.OOo.oooooo.oO.',
+    'OOoOOOOo.oOOoOOo.OoO', 'OooOoOOoooOOoo.OoOo', 'o..ooooOOO..OOoooOO',
+    '.ooOOooOO....OO..oO', '..o..OO.....OOo..oO', '..oOO......OOoo.OoO',
+    '.ooo.O....O.Oo.ooOO', 'ooOOoO...OO..oOOo..', 'oOOO.......O.OOOO..',
+    'OO.........O.OOoo..',
+  ];
+  let black = '', white = '';
+  rows.forEach((row, y) => Array.from(row.slice(0, 19)).forEach((cell, x) => {
+    const point = `[${String.fromCharCode(97 + x)}${String.fromCharCode(97 + y)}]`;
+    if (cell === 'o') black += point;
+    if (cell === 'O') white += point;
+  }));
+  loadSGF(`(;GM[1]FF[4]CA[UTF-8]SZ[19]GN[An example position]PB[Black player]PW[White player]EV[Demo diagram · load your own SGF]KM[6.5]AB${black}AW${white})`, 'example.sgf', true);
+}
+
+example();
+</script>
+</html>

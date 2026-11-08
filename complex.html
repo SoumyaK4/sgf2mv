@@ -28,6 +28,7 @@
         <div class="nav-links">
           <a href="index.html">Simple</a>
           <a href="complex.html" aria-current="page">Complex</a>
+          <a href="SGF-Postcards.html">Postcards</a>
           <a href="about.html">About</a>
           <a href="https://SoumyaK4.in">Projects</a>
           <a href="https://buymeacoffee.com/soumyak4">Support</a>
@@ -56,7 +57,7 @@
           </div>
 
           <a id="downloadLink" class="download" hidden>Download video</a>
-          <p class="status" id="status">Upload an SGF file to begin.</p>
+          <p class="status" id="status" role="status">Upload an SGF file to begin.</p>
         </aside>
 
         <section class="stage">
@@ -309,14 +310,8 @@
 
           <details class="settings-group">
             <summary>Visuals & Export</summary>
+            <div id="visualControls"></div>
             <div class="field-grid">
-              <label class="field">
-                <span>Texture</span>
-                <select id="textureInput">
-                  <option value="photo">Photo board</option>
-                  <option value="drawn">Drawn board</option>
-                </select>
-              </label>
               <label class="field">
                 <span>Video size</span>
                 <select id="sizeInput">

@@ -1,10 +1,13 @@
-const CACHE_NAME = "sgf-to-music-v6";
+const CACHE_PREFIX = "sgf-to-music-";
+const CACHE_NAME = `${CACHE_PREFIX}v11`;
 const APP_SHELL = [
   "./",
   "index.html",
   "about.html",
   "complex.html",
+  "SGF-Postcards.html",
   "src/app.js",
+  "src/visuals.js",
   "src/pwa.js",
   "src/styles.css",
   "manifest.webmanifest",
@@ -34,10 +37,10 @@ function isAppFile(request) {
 }
 
 async function cacheFresh(request) {
-  const cache = await caches.open(CACHE_NAME);
   const response = await fetch(new Request(request, { cache: "reload" }));
   if (response && response.status === 200 && response.type !== "opaque") {
-    cache.put(request, response.clone());
+    // Storage pressure must not prevent a successful network response from loading.
+    await caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone())).catch(() => {});
   }
   return response;
 }
@@ -53,7 +56,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -64,6 +67,7 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).origin !== self.location.origin) return;
 
   if (isAppFile(event.request)) {
     event.respondWith(cacheFresh(event.request).catch(() => caches.match(event.request)));
@@ -74,12 +78,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
 
-      return fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type === "opaque") return response;
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      });
+      return cacheFresh(event.request);
     }),
   );
 });

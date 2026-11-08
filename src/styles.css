@@ -382,6 +382,7 @@ button:disabled {
 }
 
 .meta {
+  white-space: pre-line;
   padding: 8px;
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(242, 207, 152, 0.12);
@@ -407,6 +408,48 @@ button:disabled {
 
 .field-inline input {
   width: auto;
+}
+
+.visual-section {
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(242, 207, 152, 0.12);
+  padding-bottom: 10px;
+}
+
+.visual-section summary {
+  min-height: 36px;
+  cursor: pointer;
+  color: #e1a868;
+}
+
+.visual-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.visual-fields .field:not(.visual-color) {
+  grid-column: 1 / -1;
+}
+
+.visual-fields output {
+  float: right;
+  color: #baaa94;
+  font-variant-numeric: tabular-nums;
+}
+
+.visual-color input {
+  min-height: 36px;
+  padding: 2px;
+  border: 1px solid rgba(242, 207, 152, 0.2);
+  border-radius: 6px;
+  background: #151313;
+  cursor: pointer;
+}
+
+#visualControls {
+  margin-bottom: 12px;
 }
 
 input[type="checkbox"],
@@ -581,6 +624,9 @@ canvas {
     grid-template-columns: 1fr;
   }
 
+}
+
+@media (max-width: 1000px) {
   .top-nav {
     z-index: 3;
   }
